@@ -41,7 +41,14 @@ importers:
 
   packages/api: {}
 
-  packages/chain: {}
+  packages/chain:
+    dependencies:
+      '@ckb-ccc/ccc':
+        specifier: ^1.2.3
+        version: 1.2.3(typescript@5.9.3)(zod@3.25.76)
+      core:
+        specifier: workspace:*
+        version: link:../core
 
   packages/cli: {}
 

@@ -9,6 +9,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
+    "test:offckb": "OFFCKB=1 vitest run --passWithNoTests",
     "lint": "eslint ."
+  },
+  "dependencies": {
+    "@ckb-ccc/ccc": "^1.2.3",
+    "core": "workspace:*"
   }
 }
