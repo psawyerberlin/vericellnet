@@ -27,22 +27,29 @@ function devnetScripts(): Record<ccc.KnownScript, ccc.ScriptInfoLike | undefined
 }
 
 /**
- * Build a CCC client for the given network. Devnet's RPC URL is read from
- * `VERICELL_DEVNET_RPC_URL` (defaults to offckb's local node).
+ * Build a CCC client for the given network.
+ *
+ * `VERICELL_RPC_URL`, when set, overrides the RPC endpoint for *any*
+ * network — self-hosted node, private testnet gateway, etc. Without it,
+ * mainnet/testnet fall back to CCC's own public endpoints, and devnet falls
+ * back to `VERICELL_DEVNET_RPC_URL` (offckb's local node by default) — see
+ * `devnetScripts` above for why devnet also needs its own scripts file.
  *
  * The `network` parameter exists only so tests can pin a network without
  * touching process.env; every other caller should call this with no
  * argument and let it resolve from `core`'s NETWORK constant.
  */
 export function makeClient(network: Network = NETWORK): ccc.Client {
+  const url = globalThis.process?.env?.VERICELL_RPC_URL;
   switch (network) {
     case "mainnet":
-      return new ccc.ClientPublicMainnet();
+      return new ccc.ClientPublicMainnet({ url });
     case "testnet":
-      return new ccc.ClientPublicTestnet();
+      return new ccc.ClientPublicTestnet({ url });
     case "devnet": {
-      const url = globalThis.process?.env?.VERICELL_DEVNET_RPC_URL ?? DEFAULT_DEVNET_RPC_URL;
-      return new ccc.ClientPublicTestnet({ url, scripts: devnetScripts() });
+      const devnetUrl =
+        url ?? globalThis.process?.env?.VERICELL_DEVNET_RPC_URL ?? DEFAULT_DEVNET_RPC_URL;
+      return new ccc.ClientPublicTestnet({ url: devnetUrl, scripts: devnetScripts() });
     }
   }
 }

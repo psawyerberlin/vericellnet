@@ -30,6 +30,18 @@ export class BadGatewayError extends ProblemError {
   }
 }
 
+export class ForbiddenError extends ProblemError {
+  constructor(detail: string) {
+    super(403, "Forbidden", detail);
+  }
+}
+
+export class ConflictError extends ProblemError {
+  constructor(detail: string) {
+    super(409, "Conflict", detail);
+  }
+}
+
 export interface ProblemDetails {
   type: string;
   title: string;

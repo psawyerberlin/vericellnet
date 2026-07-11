@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type Database from "better-sqlite3";
 import { ccc } from "@ckb-ccc/ccc";
 import { processBlock } from "./process.js";
@@ -28,10 +29,6 @@ export interface IndexerOptions {
   reorgDepth?: bigint;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /**
  * Chain-following worker: reads `sync_state`, fetches blocks from the
  * cursor to tip, indexes VeriCell proof cells, and handles reorgs. See
@@ -48,6 +45,12 @@ export class Indexer {
   private stopped = true;
   private loopPromise: Promise<void> | null = null;
   private typeIdInfo: ccc.ScriptInfo | null = null;
+  // A fresh controller per start()/stop() cycle; the constructor's default
+  // (never aborted) is what a standalone `pollOnce()` call runs under —
+  // tests call it directly without start(), and it must always run a full
+  // catch-up in that mode. Only a loop driven through start() can be
+  // interrupted mid-catch-up, via stop()'s abort() below.
+  private abortController = new AbortController();
 
   constructor(opts: IndexerOptions) {
     this.db = opts.db;
@@ -88,6 +91,12 @@ export class Indexer {
     let cursor = state.lastBlockNumber ?? this.startBlock - 1n;
 
     while (cursor < tip) {
+      // Checked every iteration (not just between pollOnce() calls) so a
+      // long catch-up spanning many blocks can be interrupted promptly —
+      // only set once start()'s loop is stop()ped; a standalone pollOnce()
+      // call (as in tests) always runs to completion, see the field comment.
+      if (this.abortController.signal.aborted) break;
+
       const next = cursor + 1n;
       const block = await this.client.getBlockByNumber(next);
       if (!block) break;
@@ -114,6 +123,7 @@ export class Indexer {
   start(): void {
     if (!this.stopped) return;
     this.stopped = false;
+    this.abortController = new AbortController();
     this.loopPromise = this.runLoop();
   }
 
@@ -125,13 +135,25 @@ export class Indexer {
         this.logger.error({ err }, "indexer poll iteration failed");
       }
       if (this.stopped) break;
-      await sleep(this.pollIntervalMs);
+      try {
+        // Interruptible: stop() aborts this immediately instead of leaving
+        // shutdown waiting out the full poll interval.
+        await delay(this.pollIntervalMs, undefined, { signal: this.abortController.signal });
+      } catch {
+        break;
+      }
     }
   }
 
-  /** Signal the loop to stop and wait for the in-flight iteration to finish. */
+  /**
+   * Signal the loop to stop and wait for the in-flight iteration to finish.
+   * Aborts a mid-catch-up pollOnce() (stops after the block currently being
+   * processed, not the whole remaining range to tip) and the idle poll-
+   * interval sleep alike, so shutdown never waits out either one.
+   */
   async stop(): Promise<void> {
     this.stopped = true;
+    this.abortController.abort();
     await this.loopPromise;
     this.loopPromise = null;
   }

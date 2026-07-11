@@ -47,6 +47,13 @@ function upsertCandidate(
        title = excluded.title,
        source_url = excluded.source_url,
        ckb_address = excluded.ckb_address,
+       -- A conflict here is normally a later version reusing the same
+       -- project unid, whose created_at must stay the genesis version's —
+       -- *except* when the existing row is a Phase 5 pending-submit
+       -- placeholder for this very genesis version (created_at was only a
+       -- submit-time guess then), which this indexed write now supersedes
+       -- with the real block timestamp.
+       created_at = CASE WHEN @versionNo = 1 THEN excluded.created_at ELSE projects.created_at END,
        active = 1,
        live_tx_hash = excluded.live_tx_hash,
        live_index = 0`,
@@ -57,6 +64,7 @@ function upsertCandidate(
     ckbAddress: address,
     createdAt: blockTime,
     txHash,
+    versionNo,
   });
 
   db.prepare(

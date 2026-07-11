@@ -26,10 +26,20 @@ import {
   type FetchProofFn,
   type GetTipFn,
 } from "./chainLookup.js";
+import {
+  defaultGetChainClient,
+  defaultGetCustodialSigner,
+  resolveCustodialEnabled,
+  type GetChainClientFn,
+  type GetCustodialSignerFn,
+} from "./chainClient.js";
+import { perKeyRateLimitOptions } from "./auth.js";
 import { problemBody, ProblemError } from "./errors.js";
 import { registerHashRoutes } from "./routes/hashes.js";
 import { registerHealthRoutes } from "./routes/health.js";
+import { registerKeyRoutes } from "./routes/keys.js";
 import { registerProjectRoutes } from "./routes/projects.js";
+import { registerProofRoutes } from "./routes/proofs.js";
 import { registerStatsRoutes } from "./routes/stats.js";
 import { registerVerifyRoutes } from "./routes/verify.js";
 import { registerVersionRoutes } from "./routes/versions.js";
@@ -48,11 +58,19 @@ export interface BuildServerOptions {
   network?: Network;
   fetchProof?: FetchProofFn;
   getTip?: GetTipFn;
+  /** Raw chain client for `/proofs*` (tx building, broadcast) — defaults to a lazily-built real `chain.makeClient()`, injectable so tests never need a live connection. */
+  chainClient?: GetChainClientFn;
   /** Fastify's own request/response logging (boolean or pino options object). Mutually exclusive with `loggerInstance`. */
   logger?: boolean;
   /** A pre-built logger (e.g. `pino()`) to reuse — see Fastify v5's `loggerInstance` option. Mutually exclusive with `logger`. */
   loggerInstance?: FastifyBaseLogger;
   rateLimit?: { max: number; timeWindow: string | number };
+  /** Bearer token guarding `POST /api/v1/keys`. Defaults to the `ADMIN_TOKEN` env var. */
+  adminToken?: string;
+  /** Feature flag for the custodial `/proofs*` routes (TECHNICAL.md §7.2-B). Defaults to `CUSTODIAL_ENABLED`, gated on mainnet by `MAINNET_CONFIRM` — see `chainClient.ts`. */
+  custodialEnabled?: boolean;
+  /** Lazily-connected service-wallet signer for custodial mode. Defaults to a `SignerCkbPrivateKey` built from `SERVICE_PRIVATE_KEY`. */
+  custodialSigner?: GetCustodialSignerFn;
 }
 
 const PROBLEM_JSON = "application/problem+json; charset=utf-8";
@@ -144,6 +162,10 @@ export function buildServer(opts: BuildServerOptions): TypedApp {
   app.decorate("network", network);
   app.decorate("fetchProofFromChain", opts.fetchProof ?? defaultFetchProof);
   app.decorate("getChainTip", opts.getTip ?? defaultGetTip);
+  app.decorate("getChainClient", opts.chainClient ?? defaultGetChainClient);
+  app.decorate("adminToken", opts.adminToken ?? globalThis.process?.env?.ADMIN_TOKEN);
+  app.decorate("custodialEnabled", opts.custodialEnabled ?? resolveCustodialEnabled(network));
+  app.decorate("getCustodialSigner", opts.custodialSigner ?? defaultGetCustodialSigner);
 
   void app.register(cors, { origin: true, methods: ["GET", "HEAD", "OPTIONS"] });
 
@@ -192,6 +214,19 @@ export function buildServer(opts: BuildServerOptions): TypedApp {
     registerVerifyRoutes(instance);
     registerStatsRoutes(instance);
     registerHealthRoutes(instance);
+    registerKeyRoutes(instance);
+
+    // Own child scope so its per-key rate limiter (distinct from the
+    // global per-IP one registered above) only ever applies to the
+    // authenticated write routes, per TECHNICAL.md §7.4.
+    void instance.register(async (writeScope) => {
+      void writeScope.register(rateLimit, {
+        global: true,
+        timeWindow: opts.rateLimit?.timeWindow ?? "1 minute",
+        ...perKeyRateLimitOptions(opts.db),
+      });
+      registerProofRoutes(writeScope);
+    });
   });
 
   return app;

@@ -69,10 +69,24 @@ export class FakeClient extends ccc.Client {
         cellDeps: [],
       });
     }
-    if (script === ccc.KnownScript.NervosDao) {
-      // Never matched by any fixture cell — completeInputsByCapacity checks
-      // every input for DAO-withdrawal extra capacity, so this just needs
-      // to resolve to *some* script that isn't one of our test cells' type.
+    if (script === ccc.KnownScript.Secp256k1Blake160) {
+      // Real testnet/mainnet codeHash — lets a `SignerCkbPrivateKey` derive
+      // a lock/address against this fake client the same way it would
+      // against a real one (`getRecommendedAddressObj`, used by callers
+      // outside this package that need an actual signer, not just a
+      // hand-rolled `ScriptLike` fixture).
+      return ccc.ScriptInfo.from({
+        codeHash: "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+        hashType: "type",
+        cellDeps: [],
+      });
+    }
+    if (script === ccc.KnownScript.NervosDao || script === ccc.KnownScript.AnyoneCanPay) {
+      // Never matched by any fixture cell — completeInputsByCapacity (DAO)
+      // and SignerCkbPublicKey.getRelatedScripts (AnyoneCanPay) both resolve
+      // this unconditionally on every call, just to compare code hashes
+      // against the tx's actual input locks. This only needs to resolve to
+      // *some* script that isn't one of our test cells' type.
       return ccc.ScriptInfo.from({
         codeHash: "0x" + "00".repeat(32),
         hashType: "type",
@@ -125,6 +139,19 @@ export class FakeClient extends ccc.Client {
   async sendTransactionNoCache(transactionLike: ccc.TransactionLike): Promise<ccc.Hex> {
     const tx = ccc.Transaction.from(transactionLike);
     const txHash = tx.hash();
+
+    // Mirrors a real node's `TransactionFailedToResolve`: an input
+    // referencing an outpoint that isn't currently live (already spent, or
+    // never existed) must reject, not silently succeed — callers that build
+    // a tx against a stale/dead cell (e.g. a caching bug) need this to fail
+    // the same way it would against a real devnet.
+    for (const input of tx.inputs) {
+      if (!this.liveCells.has(outPointKey(input.previousOutput))) {
+        throw new Error(
+          `FakeClient.sendTransactionNoCache: input references a dead or unknown outpoint ${JSON.stringify(input.previousOutput)}`,
+        );
+      }
+    }
 
     for (const input of tx.inputs) {
       this.liveCells.delete(outPointKey(input.previousOutput));

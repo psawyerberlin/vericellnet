@@ -10,7 +10,9 @@
     "build": "tsc -p tsconfig.json && node dist/scripts/writeOpenapi.js",
     "test": "vitest run --passWithNoTests",
     "test:offckb": "OFFCKB=1 vitest run --passWithNoTests",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "start:api": "node dist/server/run.js",
+    "start:indexer": "node dist/indexer/run.js"
   },
   "dependencies": {
     "@ckb-ccc/ccc": "^1.2.3",

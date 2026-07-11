@@ -11,7 +11,9 @@ async function main(): Promise<void> {
   const client = makeClient();
 
   const pollIntervalMs = Number(globalThis.process?.env?.POLL_INTERVAL_MS ?? 3000);
-  const startBlock = BigInt(globalThis.process?.env?.VERICELL_INDEXER_START_BLOCK ?? 0);
+  // Lets testnet/mainnet syncs start at VeriCell's first deployment block
+  // instead of walking the whole chain from genesis.
+  const startBlock = BigInt(globalThis.process?.env?.INDEXER_START_BLOCK ?? 0);
 
   logger.info({ network: NETWORK, pollIntervalMs }, "starting VeriCell indexer");
   const indexer = new Indexer({ db, client, logger, pollIntervalMs, startBlock });

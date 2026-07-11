@@ -5,7 +5,16 @@ import { buildServer } from "./build.js";
 
 /** Standalone API server entrypoint (Phase 10's `api` compose service). */
 async function main(): Promise<void> {
-  const logger = pino({ level: globalThis.process?.env?.LOG_LEVEL ?? "info" });
+  const logger = pino({
+    level: globalThis.process?.env?.LOG_LEVEL ?? "info",
+    // Write routes (`/proofs*`, `/keys`) carry manifests, signed transactions
+    // and bearer keys in their bodies/headers — never persist those to logs,
+    // defense in depth on top of never `req.log`-ing a body in a handler.
+    redact: {
+      paths: ["req.body", "req.headers.authorization"],
+      censor: "[redacted]",
+    },
+  });
   const db = openDb();
   const port = Number(globalThis.process?.env?.PORT ?? 3000);
 

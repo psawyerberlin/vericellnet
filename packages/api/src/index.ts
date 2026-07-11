@@ -21,6 +21,28 @@ export {
   type FetchProofFn,
   type GetTipFn,
 } from "./server/chainLookup.js";
-export { ProblemError, NotFoundError, BadGatewayError } from "./server/errors.js";
+export {
+  ProblemError,
+  NotFoundError,
+  BadGatewayError,
+  ForbiddenError,
+  ConflictError,
+} from "./server/errors.js";
+export {
+  generateApiKey,
+  hashApiKey,
+  extractBearerToken,
+  requireApiKey,
+  requireAdminToken,
+  perKeyRateLimitOptions,
+} from "./server/auth.js";
+export { withIdempotency } from "./server/idempotency.js";
+export {
+  defaultGetChainClient,
+  defaultGetCustodialSigner,
+  resolveCustodialEnabled,
+  type GetChainClientFn,
+  type GetCustodialSignerFn,
+} from "./server/chainClient.js";
 
-// Phase 5+ fills this in: authenticated write endpoints.
+// Phase 6+ fills this in further: webhooks.
