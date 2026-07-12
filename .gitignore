@@ -12,3 +12,4 @@ coverage/
 .DS_Store
 offckb.env
 devnet-services.env
+testnet-services.env
