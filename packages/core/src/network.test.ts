@@ -49,4 +49,12 @@ describe("network", () => {
     const { EXPLORER_URL } = await importFresh();
     expect(EXPLORER_URL).toBe("https://testnet.explorer.nervos.org");
   });
+
+  it("explorerUrlForNetwork resolves any network regardless of the build-time default", async () => {
+    delete process.env.VERICELL_NETWORK;
+    const { explorerUrlForNetwork } = await importFresh();
+    expect(explorerUrlForNetwork("mainnet")).toBe("https://explorer.nervos.org");
+    expect(explorerUrlForNetwork("testnet")).toBe("https://testnet.explorer.nervos.org");
+    expect(explorerUrlForNetwork("devnet")).toBe("http://localhost:8114-local");
+  });
 });

@@ -32,3 +32,13 @@ export const EXPLORER_URL: string = EXPLORER_URLS[NETWORK];
 export function isMainnet(): boolean {
   return NETWORK === "mainnet";
 }
+
+/**
+ * Explorer URL for an arbitrary network, not just the build-time `NETWORK`.
+ * For runtime consumers (e.g. the web app's network toggle, phase 10b) that
+ * need to resolve links for a network the user switched to at runtime —
+ * `EXPLORER_URL` alone only ever reflects the build-time default.
+ */
+export function explorerUrlForNetwork(network: Network): string {
+  return EXPLORER_URLS[network];
+}

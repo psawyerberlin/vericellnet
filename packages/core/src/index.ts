@@ -16,4 +16,10 @@ export {
   type ManifestFile,
 } from "./manifest.js";
 export { estimateCellCost, type CellCostEstimate } from "./cost.js";
-export { NETWORK, EXPLORER_URL, isMainnet, type Network } from "./network.js";
+export {
+  NETWORK,
+  EXPLORER_URL,
+  isMainnet,
+  explorerUrlForNetwork,
+  type Network,
+} from "./network.js";

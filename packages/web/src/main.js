@@ -17,18 +17,26 @@ import {
   encodeManifest,
   estimateCellCost,
   NETWORK,
-  EXPLORER_URL,
-  isMainnet,
+  explorerUrlForNetwork,
 } from "core";
 
 /* ================================================================== */
 /* API client — global index, with localStorage as offline fallback   */
+/*                                                                     */
+/* The network is runtime state (phase 10b) — every API call is       */
+/* scoped under /api/v1/{network}/... (see packages/api build.ts's    */
+/* per-network mounts), re-derived from `state.network` on each call  */
+/* so a network switch takes effect immediately, no page reload.      */
 /* ================================================================== */
 const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
+function apiUrlBase() {
+  return `${API_BASE}/api/v1/${state.network}`;
+}
+
 async function apiFetch(path) {
   if (!API_BASE) throw new Error("no API configured (VITE_API_URL unset)");
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetch(`${apiUrlBase()}${path}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`API ${res.status} on ${path}`);
   return res.json();
@@ -36,13 +44,13 @@ async function apiFetch(path) {
 
 function apiSearchProjects(params) {
   const qs = new URLSearchParams(params).toString();
-  return apiFetch(`/api/v1/projects?${qs}`);
+  return apiFetch(`/projects?${qs}`);
 }
 function apiGetProject(unid) {
-  return apiFetch(`/api/v1/projects/${encodeURIComponent(unid)}`);
+  return apiFetch(`/projects/${encodeURIComponent(unid)}`);
 }
 function apiGetVersion(txHash) {
-  return apiFetch(`/api/v1/versions/${txHash}`);
+  return apiFetch(`/versions/${txHash}`);
 }
 
 function looksLikeHex64(q) {
@@ -124,10 +132,30 @@ function mergeHits(apiHits, localHits) {
 
 /* ================================================================== */
 /* State                                                              */
+/*                                                                     */
+/* `state.network` is runtime state (phase 10b), not a build-time     */
+/* constant: it defaults to `core`'s NETWORK (VITE_VERICELL_NETWORK   */
+/* at build time — mainnet in a production build, testnet in dev),    */
+/* but a user switching the top-bar badge overrides it and the        */
+/* override is persisted in localStorage so it survives reloads.      */
+/* Only testnet/mainnet are reachable from the badge; a devnet build  */
+/* (local offckb testing) is unaffected — see wireNetworkSwitch().    */
 /* ================================================================== */
-function makeChainClient() {
-  if (NETWORK === "mainnet") return new ccc.ClientPublicMainnet();
-  if (NETWORK === "devnet") {
+const NETWORK_STORAGE_KEY = "vericell:network";
+
+function resolveInitialNetwork() {
+  try {
+    const stored = localStorage.getItem(NETWORK_STORAGE_KEY);
+    if (stored === "testnet" || stored === "mainnet") return stored;
+  } catch {
+    /* localStorage unavailable (private mode, etc.) — fall back to the build default */
+  }
+  return NETWORK;
+}
+
+function makeChainClient(network) {
+  if (network === "mainnet") return new ccc.ClientPublicMainnet();
+  if (network === "devnet") {
     return new ccc.ClientPublicTestnet({
       url: import.meta.env.VITE_DEVNET_RPC_URL || "http://127.0.0.1:28114",
     });
@@ -136,12 +164,14 @@ function makeChainClient() {
 }
 
 const state = {
-  network: NETWORK, // fixed at build time (core/network.ts) — see the top-bar badge
-  client: makeChainClient(),
+  network: resolveInitialNetwork(),
+  client: null, // set below, once state.network is known
   signer: null,
   address: null,
   entries: [], // [{ p: path, h: sha256hex, bytes }]
+  pendingPrev: null, // set while the create panel is in "publish new version" mode
 };
+state.client = makeChainClient(state.network);
 
 const MANIFEST_APP = "vericell";
 const MANIFEST_VERSION = 1;
@@ -225,8 +255,9 @@ function buildManifest({ compact, title, url, projHash, root, prev, genesis }) {
   return m;
 }
 
-/** Create the proof cell. Optionally consumes the previous version's cell. */
-async function anchorProof({ compact, prevOutPoint }) {
+/** Create the proof cell. Optionally consumes the previous version's cell
+ *  (`genesis`/`prevTxHash` then bind the new manifest into that version chain). */
+async function anchorProof({ compact, prevOutPoint, genesis, prevTxHash }) {
   if (!state.signer) throw new Error("Connect a wallet first.");
   if (state.entries.length === 0) throw new Error("Add at least one file or hash.");
 
@@ -235,7 +266,15 @@ async function anchorProof({ compact, prevOutPoint }) {
   const projHash = await projectHash(state.entries);
   const root = await merkleRoot(state.entries);
 
-  const manifest = buildManifest({ compact, title, url, projHash, root });
+  const manifest = buildManifest({
+    compact,
+    title,
+    url,
+    projHash,
+    root,
+    prev: prevTxHash,
+    genesis,
+  });
   const data = encodeManifest(manifest);
 
   const { script: lock } = await state.signer.getRecommendedAddressObj();
@@ -424,23 +463,26 @@ function fpStrip(hex, el) {
 function renderNetworkBadge() {
   const el = document.getElementById("networkBadge");
   if (!el) return;
-  el.textContent = NETWORK.toUpperCase();
-  el.classList.add(`net-badge--${NETWORK}`);
-  el.title = isMainnet()
-    ? "Mainnet build — anchoring costs real CKB."
-    : `${NETWORK} build — for testing only.`;
+  el.textContent = state.network.toUpperCase();
+  el.className = "net-badge"; // reset the previous network's modifier class
+  el.classList.add(`net-badge--${state.network}`);
+  el.title =
+    state.network === "mainnet"
+      ? "Mainnet — anchoring costs real CKB. Click to switch."
+      : `${state.network} — for testing only. Click to switch.`;
 }
 
-/** curl examples in the "API & automation" section, filled in with the actual API base. */
+/** curl examples in the "API & automation" section, filled in with the actual API base and network. */
 function renderApiSection() {
   const base = API_BASE || "https://api.vericell.example";
+  const v1 = `${base}/api/v1/${state.network}`;
   const prepareEl = document.getElementById("curlPrepare");
   const submitEl = document.getElementById("curlSubmit");
   const verifyEl = document.getElementById("curlVerify");
   if (prepareEl) {
     prepareEl.textContent =
       `# 1. Prepare an unsigned anchoring transaction (non-custodial — you sign it, not the API)\n` +
-      `curl -s -X POST ${base}/api/v1/proofs/prepare \\\n` +
+      `curl -s -X POST ${v1}/proofs/prepare \\\n` +
       `  -H "Authorization: Bearer $VERICELL_API_KEY" \\\n` +
       `  -H "Content-Type: application/json" \\\n` +
       `  -d '{"manifest":{"title":"my-project","files":[{"p":"README.md","h":"<sha256>"}]},"payer":{"lock":{...}}}'`;
@@ -448,7 +490,7 @@ function renderApiSection() {
   if (submitEl) {
     submitEl.textContent =
       `# 2. Sign the returned tx locally (vericell CLI or any CCC signer), then submit it\n` +
-      `curl -s -X POST ${base}/api/v1/proofs/submit \\\n` +
+      `curl -s -X POST ${v1}/proofs/submit \\\n` +
       `  -H "Authorization: Bearer $VERICELL_API_KEY" \\\n` +
       `  -H "Content-Type: application/json" \\\n` +
       `  -d '{"tx": <signed-tx-json>}'`;
@@ -457,13 +499,97 @@ function renderApiSection() {
     verifyEl.textContent =
       `# Verify a file's hash — no API key needed, nothing is uploaded\n` +
       `sha256sum myfile.zip\n` +
-      `curl -s ${base}/api/v1/verify/<sha256>`;
+      `curl -s ${v1}/verify/<sha256>`;
   }
   const docsLink = document.getElementById("apiDocsLink");
   if (docsLink) {
+    // /api/v1/docs itself isn't network-scoped (one Swagger UI covers every mounted network).
     docsLink.href = `${base}/api/v1/docs`;
     if (!API_BASE) docsLink.textContent = "interactive API docs (set VITE_API_URL to enable)";
   }
+}
+
+/* ================================================================== */
+/* Runtime network toggle (phase 10b)                                 */
+/* ================================================================== */
+function explorerTxUrl(txHash) {
+  return `${explorerUrlForNetwork(state.network)}/transaction/${txHash}`;
+}
+
+/** Atomically move every network-scoped piece of state to `target` and re-query open views. */
+async function switchNetwork(target) {
+  state.network = target;
+  try {
+    localStorage.setItem(NETWORK_STORAGE_KEY, target);
+  } catch {
+    /* localStorage unavailable — the switch still works for this page load */
+  }
+  state.client = makeChainClient(target);
+
+  // A signer authorized on one network isn't valid on the other — force a
+  // fresh connection rather than risk signing/reading against the wrong chain.
+  state.signer = null;
+  state.address = null;
+  exitVersionMode();
+  const connectBtn = document.getElementById("connectBtn");
+  connectBtn.textContent = "Connect wallet";
+  connectBtn.classList.remove("is-connected");
+  connectBtn.title = "";
+  document.getElementById("createPanel").classList.add("is-locked");
+  document.getElementById("createGate").textContent =
+    `Switched to ${target.toUpperCase()} — reconnect your wallet to create proofs.`;
+
+  renderNetworkBadge();
+  renderApiSection();
+
+  // The open detail view (if any) belongs to whichever network it was opened
+  // from; there's no cross-network mapping for a single tx/unid, so close it
+  // rather than show stale or wrong-chain data.
+  document.getElementById("detail").hidden = true;
+  document.getElementById("detailPanel").innerHTML = "";
+
+  const q = document.getElementById("searchInput").value.trim();
+  if (q) await runSearch(q);
+  else document.getElementById("searchResults").innerHTML = "";
+}
+
+function wireNetworkSwitch() {
+  const badge = document.getElementById("networkBadge");
+  const box = document.getElementById("netConfirm");
+  const text = document.getElementById("netConfirmText");
+  const yes = document.getElementById("netConfirmYes");
+  const no = document.getElementById("netConfirmNo");
+
+  function closePopover() {
+    box.hidden = true;
+    badge.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onOutsideClick);
+  }
+  function onOutsideClick(e) {
+    if (!box.contains(e.target) && e.target !== badge) closePopover();
+  }
+
+  badge.onclick = (e) => {
+    e.stopPropagation();
+    if (!box.hidden) {
+      closePopover();
+      return;
+    }
+    const target = state.network === "mainnet" ? "testnet" : "mainnet";
+    text.textContent =
+      target === "mainnet"
+        ? "Switch to Mainnet — anchoring uses real CKB."
+        : "Switch to Testnet — for testing only, uses test CKB with no real value.";
+    yes.textContent = `Switch to ${target === "mainnet" ? "Mainnet" : "Testnet"}`;
+    yes.onclick = () => {
+      closePopover();
+      switchNetwork(target);
+    };
+    no.onclick = closePopover;
+    box.hidden = false;
+    badge.setAttribute("aria-expanded", "true");
+    document.addEventListener("click", onOutsideClick);
+  };
 }
 
 async function renderManifest() {
@@ -591,30 +717,149 @@ async function showDetail(rec) {
   else await renderDetailFromChain(rec);
 }
 
-function explorerTxUrl(txHash) {
-  return `${EXPLORER_URL}/transaction/${txHash}`;
+/* ================================================================== */
+/* Create-panel "publish new version" mode (phase 10b)                */
+/* ================================================================== */
+/** True once a wallet is connected and its address matches the project's owner. */
+function isConnectedOwner(ownerAddress) {
+  return !!(state.address && ownerAddress && state.address === ownerAddress);
 }
 
-function wireNewVersionButton(panel, { txHash, index, genesis, title, sourceUrl }) {
+function updateCreatePanelMode() {
+  const prev = state.pendingPrev;
+  const heading = document.getElementById("createHeading");
+  const cancelBtn = document.getElementById("cancelVersionBtn");
+  const banner = document.getElementById("versionBanner");
+  const submitBtn = document.getElementById("submitBtn");
+
+  if (!prev) {
+    heading.textContent = "Create a project proof";
+    cancelBtn.hidden = true;
+    banner.hidden = true;
+    submitBtn.textContent = "Anchor proof on CKB";
+    return;
+  }
+
+  const title = document.getElementById("projTitle").value || "this project";
+  const nextNo = typeof prev.versionNo === "number" ? prev.versionNo + 1 : null;
+  heading.textContent = `New version of: ${title}`;
+  cancelBtn.hidden = false;
+  banner.hidden = false;
+  banner.innerHTML = `
+    Anchoring will <strong>consume</strong> the current live cell
+    (${typeof prev.versionNo === "number" ? `v${prev.versionNo} · ` : ""}tx
+    ${prev.rec.txHash.slice(0, 14)}…) and create a new live cell. The old version stays
+    permanently verifiable as <strong>superseded</strong>. Locked CKB from the old cell
+    returns to your wallet.`;
+  submitBtn.textContent = `Consume ${typeof prev.versionNo === "number" ? `v${prev.versionNo}` : "current"} → anchor ${nextNo ? `v${nextNo}` : "next version"}`;
+}
+
+function enterVersionMode({ txHash, index, genesis, title, sourceUrl, versionNo, ownerAddress }) {
+  if (!state.signer) {
+    alert("Connect your wallet first.");
+    return;
+  }
+  if (ownerAddress && !isConnectedOwner(ownerAddress)) {
+    alert("Connect the wallet that owns this project to publish a new version.");
+    return;
+  }
+  state.pendingPrev = {
+    outPoint: { txHash, index: ccc.numFrom(index) },
+    genesis,
+    rec: { txHash },
+    versionNo,
+  };
+  document.getElementById("projTitle").value = title;
+  document.getElementById("projUrl").value = sourceUrl || "";
+  updateCreatePanelMode();
+  document.getElementById("create").scrollIntoView({ behavior: "smooth" });
+  setStatus(
+    "submitStatus",
+    "New-version mode: the previous cell will be consumed when you anchor. Add the new files.",
+  );
+}
+
+function exitVersionMode() {
+  state.pendingPrev = null;
+  updateCreatePanelMode();
+}
+
+function wireNewVersionButton(
+  panel,
+  { txHash, index, genesis, title, sourceUrl, versionNo, ownerAddress },
+) {
   const btn = panel.querySelector("#newVersionBtn");
   if (!btn) return;
+  btn.onclick = () =>
+    enterVersionMode({ txHash, index, genesis, title, sourceUrl, versionNo, ownerAddress });
+}
+
+/* ================================================================== */
+/* Withdraw (phase 10b) — consume the live cell without a successor   */
+/* ================================================================== */
+/** Build+send a withdraw tx: consumes `outPoint`, capacity refunds to the connected wallet. */
+async function withdrawProof(outPoint) {
+  if (!state.signer) throw new Error("Connect a wallet first.");
+  const tx = ccc.Transaction.from({ inputs: [{ previousOutput: outPoint }] });
+  await tx.completeFeeBy(state.signer, 1000);
+  const txHash = await state.signer.sendTransaction(tx);
+
+  const list = loadRegistry();
+  const old = list.find((r) => r.txHash === outPoint.txHash);
+  if (old) {
+    old.active = false;
+    saveRegistry(list);
+  }
+  return { txHash };
+}
+
+function wireWithdrawButton(panel, { txHash, index, title, ownerAddress }) {
+  const btn = panel.querySelector("#withdrawBtn");
+  const box = panel.querySelector("#withdrawConfirm");
+  if (!btn || !box) return;
+  const input = box.querySelector("#withdrawTitleInput");
+  const confirmBtn = box.querySelector("#withdrawConfirmBtn");
+  const cancelBtn = box.querySelector("#withdrawCancelBtn");
+
   btn.onclick = () => {
     if (!state.signer) {
       alert("Connect your wallet first.");
       return;
     }
-    state.pendingPrev = {
-      outPoint: { txHash, index: ccc.numFrom(index) },
-      genesis,
-      rec: { txHash },
-    };
-    document.getElementById("projTitle").value = title;
-    if (sourceUrl) document.getElementById("projUrl").value = sourceUrl;
-    document.getElementById("create").scrollIntoView({ behavior: "smooth" });
-    setStatus(
-      "submitStatus",
-      "New-version mode: the previous cell will be consumed when you anchor. Add the new files.",
-    );
+    if (ownerAddress && !isConnectedOwner(ownerAddress)) {
+      alert("Connect the wallet that owns this project to withdraw it.");
+      return;
+    }
+    input.value = "";
+    confirmBtn.disabled = true;
+    box.hidden = false;
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+  input.oninput = () => {
+    confirmBtn.disabled = input.value !== title;
+  };
+  cancelBtn.onclick = () => {
+    box.hidden = true;
+  };
+  confirmBtn.onclick = async () => {
+    confirmBtn.disabled = true;
+    try {
+      setStatus("detailStatus", "Building withdraw transaction — confirm in your wallet…");
+      const { txHash: newTxHash } = await withdrawProof({
+        txHash,
+        index: ccc.numFrom(index),
+      });
+      setStatus(
+        "detailStatus",
+        `Withdrawn ✔ tx ${newTxHash.slice(0, 18)}… — capacity refunded to your wallet.`,
+      );
+      box.hidden = true;
+      btn.disabled = true;
+      btn.textContent = "Withdrawn";
+    } catch (e) {
+      setStatus("detailStatus", e.message || String(e), true);
+      confirmBtn.disabled = input.value !== title;
+    }
   };
 }
 
@@ -653,7 +898,18 @@ async function renderDetailFromApi(detail, rec) {
           : "—"
       }</dd>
     </dl>
-    <p><strong>Version history</strong> — genesis → live, from the global index:</p>
+    <p><strong>Version chain</strong> — consumed ⊗ / live ●:</p>
+    ${renderCellDiagram(
+      detail.versions.map((v) => ({
+        status:
+          v.tx_hash === detail.live_tx_hash
+            ? "live"
+            : v.status === "pending"
+              ? "pending"
+              : "consumed",
+        label: `v${v.version_no ?? "?"} · ${v.status} · ${v.tx_hash}`,
+      })),
+    )}
     <ol class="version-timeline">
       ${detail.versions
         .map(
@@ -680,6 +936,8 @@ async function renderDetailFromApi(detail, rec) {
     }
     <div class="submit-row">
       ${detail.active ? '<button class="btn btn-ghost btn-small" id="newVersionBtn">Publish new version (consume this cell)</button>' : ""}
+      ${detail.active ? withdrawSectionHtml() : ""}
+      <span id="detailStatus" class="status"></span>
       <span class="gate-note">Source: global index${API_BASE ? ` (${API_BASE})` : ""}</span>
     </div>`;
   panel.querySelector("h3").textContent = detail.title;
@@ -692,6 +950,14 @@ async function renderDetailFromApi(detail, rec) {
       genesis: detail.unid,
       title: detail.title,
       sourceUrl: detail.source_url,
+      versionNo: live?.version_no,
+      ownerAddress: detail.ckb_address,
+    });
+    wireWithdrawButton(panel, {
+      txHash: detail.live_tx_hash,
+      index: detail.live_index ?? 0,
+      title: detail.title,
+      ownerAddress: detail.ckb_address,
     });
   }
 }
@@ -724,6 +990,13 @@ async function renderDetailFromChain(rec) {
       <dt>Source URL</dt><dd>${m.source ? `<a href="${m.source}" target="_blank" rel="noopener">${m.source}</a>` : "—"}</dd>
       <dt>Transaction</dt><dd><a href="${explorerTxUrl(rec.txHash)}" target="_blank" rel="noopener">${rec.txHash}</a></dd>
     </dl>
+    <p><strong>Version chain</strong> — consumed ⊗ / live ●:</p>
+    ${renderCellDiagram([
+      {
+        status: chain.live === true ? "live" : chain.live === false ? "consumed" : "pending",
+        label: `${rec.txHash} · ${chain.live === true ? "live" : chain.live === false ? "consumed" : "unknown"}`,
+      },
+    ])}
     ${
       files.length
         ? `<p><strong>${files.length}</strong> fingerprinted entries:</p>
@@ -736,19 +1009,63 @@ async function renderDetailFromChain(rec) {
         : `<p class="gate-note">Compact proof — individual file hashes are represented by the Merkle root.</p>`
     }
     <div class="submit-row">
-      <button class="btn btn-ghost btn-small" id="newVersionBtn">Publish new version (consume this cell)</button>
+      ${chain.live !== false ? '<button class="btn btn-ghost btn-small" id="newVersionBtn">Publish new version (consume this cell)</button>' : ""}
+      ${chain.live !== false ? withdrawSectionHtml() : ""}
+      <span id="detailStatus" class="status"></span>
       <span class="gate-note">${API_BASE ? "Global index unavailable — direct chain lookup." : "Not connected to a global index — direct chain lookup."}</span>
     </div>`;
   panel.querySelector("h3").textContent = m.title || rec.title;
   fpStrip(m.project_sha256 || rec.project_sha256, panel.querySelector(".fp-strip"));
 
+  const ownerAddress = chain.lockOwner || rec.address || null;
   wireNewVersionButton(panel, {
     txHash: rec.txHash,
     index: rec.index,
     genesis: rec.unid,
     title: rec.title,
     sourceUrl: rec.source,
+    ownerAddress,
   });
+  wireWithdrawButton(panel, {
+    txHash: rec.txHash,
+    index: rec.index,
+    title: rec.title,
+    ownerAddress,
+  });
+}
+
+/** Small visual chain: ● live, ⊗ consumed, ○ pending — a compact companion to the tx-linked timeline. */
+function renderCellDiagram(nodes) {
+  const glyph = { live: "●", consumed: "⊗", pending: "○" };
+  return `<div class="cell-diagram">${nodes
+    .map(
+      (n, i) =>
+        `${i > 0 ? '<span class="cell-link">→</span>' : ""}<span class="cell-node ${n.status}" title="${escapeHtml(n.label)}">${glyph[n.status]}</span>`,
+    )
+    .join("")}</div>`;
+}
+
+/** Markup for the withdraw button + its retype-to-confirm panel — shared by both detail renderers. */
+function withdrawSectionHtml() {
+  return `
+    <button class="btn btn-ghost btn-small" id="withdrawBtn">Withdraw (consume, no successor)</button>
+    <div id="withdrawConfirm" class="withdraw-confirm" hidden>
+      <p class="permanence-note">
+        Withdrawing consumes the live cell with <strong>no successor</strong> — the project is
+        permanently marked withdrawn (its history stays verifiable, but no version remains
+        current). Locked CKB capacity refunds to your wallet.
+      </p>
+      <label
+        >Type the project title to confirm:
+        <input id="withdrawTitleInput" type="text" autocomplete="off"
+      /></label>
+      <div class="submit-row">
+        <button id="withdrawConfirmBtn" class="btn btn-primary btn-small" disabled>
+          Withdraw project
+        </button>
+        <button id="withdrawCancelBtn" class="btn btn-ghost btn-small">Cancel</button>
+      </div>
+    </div>`;
 }
 
 function escapeHtml(s) {
@@ -766,6 +1083,44 @@ async function verifyFile(file) {
   document.getElementById("searchInput").value = h;
   await runSearch(h, { matchedHash: h });
   document.getElementById("verify").scrollIntoView({ behavior: "smooth" });
+}
+
+/** Actually build, sign and send the anchor tx — called directly for a first anchor,
+ *  or after the inline confirm step when publishing a new version. */
+async function doAnchor() {
+  const btn = document.getElementById("submitBtn");
+  btn.disabled = true;
+  try {
+    const compact = document.querySelector('input[name="storemode"]:checked').value === "root";
+    setStatus("submitStatus", "Building transaction — confirm in your wallet…");
+    const prev = state.pendingPrev;
+    const { txHash } = await anchorProof({
+      compact,
+      prevOutPoint: prev?.outPoint || null,
+      genesis: prev?.genesis,
+      prevTxHash: prev?.rec?.txHash,
+    });
+    if (prev) {
+      // mark the superseded record inactive and link versions in the registry
+      const list = loadRegistry();
+      const old = list.find((r) => r.txHash === prev.rec.txHash);
+      if (old) old.active = false;
+      const neu = list.find((r) => r.txHash === txHash);
+      if (neu) {
+        neu.unid = prev.genesis;
+        neu.prev = prev.rec.txHash;
+      }
+      saveRegistry(list);
+      exitVersionMode();
+    }
+    setStatus("submitStatus", `Anchored ✔ tx ${txHash.slice(0, 18)}… — view it in Search below.`);
+    state.entries = [];
+    renderManifest();
+  } catch (e) {
+    setStatus("submitStatus", e.message || String(e), true);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ================================================================== */
@@ -793,6 +1148,8 @@ function wireDropzone(el, onFiles) {
 function init() {
   renderNetworkBadge();
   renderApiSection();
+  wireNetworkSwitch();
+  updateCreatePanelMode();
   document.getElementById("connectBtn").onclick = connectWallet;
 
   // hero demo
@@ -835,44 +1192,38 @@ function init() {
     addPastedHashes(document.getElementById("hashPaste").value);
   document.getElementById("clearBtn").onclick = () => {
     state.entries = [];
-    state.pendingPrev = null;
+    exitVersionMode();
+    document.getElementById("anchorConfirm").hidden = true;
     renderManifest();
     setStatus("submitStatus", "");
   };
+  document.getElementById("cancelVersionBtn").onclick = (e) => {
+    e.preventDefault();
+    exitVersionMode();
+    document.getElementById("anchorConfirm").hidden = true;
+    setStatus("submitStatus", "");
+  };
 
-  // anchor
-  document.getElementById("submitBtn").onclick = async () => {
-    const btn = document.getElementById("submitBtn");
-    btn.disabled = true;
-    try {
-      const compact = document.querySelector('input[name="storemode"]:checked').value === "root";
-      setStatus("submitStatus", "Building transaction — confirm in your wallet…");
-      const prev = state.pendingPrev;
-      const { txHash } = await anchorProof({
-        compact,
-        prevOutPoint: prev?.outPoint || null,
-      });
-      if (prev) {
-        // mark the superseded record inactive and link versions in the registry
-        const list = loadRegistry();
-        const old = list.find((r) => r.txHash === prev.rec.txHash);
-        if (old) old.active = false;
-        const neu = list.find((r) => r.txHash === txHash);
-        if (neu) {
-          neu.unid = prev.genesis;
-          neu.prev = prev.rec.txHash;
-        }
-        saveRegistry(list);
-        state.pendingPrev = null;
-      }
-      setStatus("submitStatus", `Anchored ✔ tx ${txHash.slice(0, 18)}… — view it in Search below.`);
-      state.entries = [];
-      renderManifest();
-    } catch (e) {
-      setStatus("submitStatus", e.message || String(e), true);
-    } finally {
-      btn.disabled = false;
+  // anchor — first anchors go straight to the wallet; publishing a new
+  // version (consuming the live cell) gets one extra inline confirm step.
+  document.getElementById("submitBtn").onclick = () => {
+    const prev = state.pendingPrev;
+    if (!prev) {
+      doAnchor();
+      return;
     }
+    document.getElementById("anchorConfirmText").textContent =
+      `This will consume ${typeof prev.versionNo === "number" ? `v${prev.versionNo}` : "the current version"} ` +
+      `(tx ${prev.rec.txHash.slice(0, 14)}…) and create the next version. The old version remains ` +
+      `permanently verifiable as superseded; its locked CKB returns to your wallet.`;
+    document.getElementById("anchorConfirm").hidden = false;
+  };
+  document.getElementById("anchorConfirmYes").onclick = () => {
+    document.getElementById("anchorConfirm").hidden = true;
+    doAnchor();
+  };
+  document.getElementById("anchorConfirmNo").onclick = () => {
+    document.getElementById("anchorConfirm").hidden = true;
   };
 
   // search & verify
@@ -885,7 +1236,10 @@ function init() {
   });
   wireDropzone(document.getElementById("verifyDrop"), (files) => verifyFile(files[0]));
 
-  document.getElementById("projTitle").addEventListener("input", () => renderManifest());
+  document.getElementById("projTitle").addEventListener("input", () => {
+    renderManifest();
+    if (state.pendingPrev) updateCreatePanelMode();
+  });
 }
 
 init();

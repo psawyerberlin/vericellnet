@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Datenschutzerklärung — VeriCell</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <rect
+            x="2"
+            y="2"
+            width="20"
+            height="20"
+            rx="3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          />
+          <rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" />
+        </svg>
+        VeriCell
+      </a>
+    </header>
+    <main>
+      <section class="legal-page">
+        <a class="back-link link-btn" href="/">← Zurück zu VeriCell</a>
+        <h1>Datenschutzerklärung</h1>
+        <p class="lede">
+          Diese Erklärung beschreibt, welche Daten bei der Nutzung von VeriCell verarbeitet werden —
+          bewusst kurz gehalten, weil der Dienst so gebaut ist, dass er möglichst wenige
+          personenbezogene Daten überhaupt erst erhebt.
+        </p>
+
+        <h2>Verantwortlicher</h2>
+        <p>
+          <span class="fill-in">FILL_IN: Name / Firma</span><br />
+          <span class="fill-in">FILL_IN: Anschrift</span><br />
+          E-Mail: <span class="fill-in">FILL_IN: kontakt@example.com</span>
+        </p>
+        <p>Weitere Angaben siehe <a href="/impressum.html">Impressum</a>.</p>
+
+        <h2>1. Lokale Dateiverarbeitung — keine Uploads</h2>
+        <p>
+          Alle Dateien, Ordner und URLs, die Sie zum Erstellen eines Proofs auswählen, werden
+          ausschließlich <strong>lokal in Ihrem Browser</strong> mittels der Web-Crypto-API
+          (SHA-256) gehasht. Die Dateiinhalte selbst werden zu keinem Zeitpunkt an den VeriCell-
+          Server oder einen Dritten übertragen. Auf der Blockchain landen ausschließlich die von
+          Ihnen gewählten Metadaten (Titel, Dateipfade, Hashwerte, optionale Quell-URL) — niemals
+          der Dateiinhalt selbst.
+        </p>
+
+        <h2>2. Keine Konten, keine Cookies, kein Tracking</h2>
+        <p>
+          VeriCell verlangt keine Registrierung und führt keine Nutzerkonten. Die Website setzt
+          keine Cookies und keine Analyse-, Tracking- oder Werbedienste ein.
+        </p>
+
+        <h2>3. Local Storage im Browser</h2>
+        <p>
+          Der Browser speichert lokal (im <code>localStorage</code>, ausschließlich auf Ihrem
+          Gerät):
+        </p>
+        <ul>
+          <li>
+            Ihre Netzwerk-Auswahl (Testnet/Mainnet), sofern Sie diese manuell umgeschaltet haben;
+          </li>
+          <li>
+            eine lokale Liste der von diesem Gerät aus erstellten Proofs (als schnelle,
+            netzwerkgebundene Übersicht und Offline-Fallback, falls der globale Index nicht
+            erreichbar ist).
+          </li>
+        </ul>
+        <p>
+          Diese Daten verlassen Ihr Gerät nicht von sich aus und werden nicht an den VeriCell-
+          Server übertragen. Sie können sie jederzeit über die Browser-Einstellungen löschen.
+        </p>
+
+        <h2>4. Server-Zugriffsprotokolle</h2>
+        <p>
+          Beim Aufruf der Website und der REST-API werden aus technischen Gründen (Betrieb,
+          Sicherheit, Fehleranalyse) automatisch Zugriffsdaten in Server-Logs verarbeitet, unter
+          anderem IP-Adresse, Zeitpunkt der Anfrage, aufgerufene URL und User-Agent. Rechtsgrundlage
+          ist Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse am sicheren und störungsfreien
+          Betrieb). Speicherdauer:
+          <span class="fill-in">FILL_IN: konkrete Aufbewahrungsfrist der Server-/Hosting-Logs</span
+          >.
+        </p>
+
+        <h2>5. API-Schlüssel (Automatisierung)</h2>
+        <p>
+          Wer die REST-API zur Automatisierung nutzt, erhält einen API-Schlüssel. Dieser wird dem
+          Nutzer einmalig angezeigt; serverseitig wird ausschließlich ein SHA-256-Hash des
+          Schlüssels gespeichert, niemals der Schlüssel selbst im Klartext.
+        </p>
+
+        <h2>6. Öffentliche On-Chain-Daten</h2>
+        <p>
+          Wenn Sie einen Proof „ankern“, werden Titel, Dateipfade und Hashwerte in eine Zelle auf
+          der öffentlichen Nervos-CKB-Blockchain geschrieben, gesperrt auf Ihre Wallet-Adresse. Der
+          VeriCell-Indexdienst liest diese ohnehin öffentlichen On-Chain-Daten aus und hält sie in
+          einer Datenbank zur schnelleren Suche vor (Projekttitel, Pfade, Hashes, Wallet-Adresse,
+          Zeitstempel) — es handelt sich um eine abgeleitete Kopie öffentlicher Blockchain-Daten,
+          keine zusätzliche Datenerhebung.
+        </p>
+
+        <h2>7. Unveränderlichkeit der Blockchain &amp; Recht auf Löschung (Art. 17 DSGVO)</h2>
+        <p>
+          Daten, die einmal auf der Blockchain verankert wurden, können technisch
+          <strong>nicht mehr gelöscht oder verändert</strong> werden — das ist die Kerneigenschaft
+          des Dienstes (unveränderlicher Nachweis). Ein Löschungsanspruch nach Art. 17 DSGVO kann
+          für bereits verankerte Daten daher technisch nicht umgesetzt werden. Geben Sie deshalb in
+          Projekttiteln, Dateipfaden und der optionalen Quell-URL keine personenbezogenen Daten
+          Dritter und nicht mehr Informationen an, als für den Nachweiszweck erforderlich ist.
+          <span class="fill-in"
+            >FILL_IN: rechtliche Einordnung dieses Punktes ggf. mit einem
+            Datenschutzbeauftragten/einer Datenschutzbeauftragten klären</span
+          >.
+        </p>
+
+        <h2>8. Ihre Rechte</h2>
+        <p>
+          Sie haben nach der DSGVO grundsätzlich das Recht auf Auskunft, Berichtigung, Löschung (mit
+          der in Ziffer 7 genannten technischen Einschränkung für bereits verankerte Daten),
+          Einschränkung der Verarbeitung, Datenübertragbarkeit sowie Widerspruch gegen die
+          Verarbeitung. Wenden Sie sich hierzu an die oben genannte Kontaktadresse. Es besteht zudem
+          ein Beschwerderecht bei einer Datenschutz-Aufsichtsbehörde.
+        </p>
+      </section>
+    </main>
+    <footer class="footer">
+      <p class="fine">
+        VeriCell — Nachweis von Autorschaft, Integrität und Zeitpunkt auf Nervos CKB.
+      </p>
+      <nav class="legal-links">
+        <a href="/impressum.html">Impressum</a>
+        <a href="/datenschutz.html">Datenschutzerklärung</a>
+        <a href="/haftungsausschluss.html">Haftungsausschluss</a>
+      </nav>
+    </footer>
+  </body>
+</html>

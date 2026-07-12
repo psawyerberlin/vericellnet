@@ -40,11 +40,24 @@
         <a href="#verify">Verify</a>
         <a href="#how">How it works</a>
         <a href="#api">API</a>
-        <span
-          id="networkBadge"
-          class="net-badge"
-          title="Active network — set at build time, see core/network.ts"
-        ></span>
+        <div class="net-switch">
+          <button
+            id="networkBadge"
+            type="button"
+            class="net-badge"
+            aria-haspopup="true"
+            aria-expanded="false"
+          ></button>
+          <div id="netConfirm" class="net-confirm" hidden role="dialog" aria-label="Switch network">
+            <p id="netConfirmText"></p>
+            <div class="net-confirm-actions">
+              <button id="netConfirmYes" type="button" class="btn btn-small btn-primary"></button>
+              <button id="netConfirmNo" type="button" class="btn btn-small btn-ghost">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       </nav>
       <button id="connectBtn" class="connect-btn">Connect wallet</button>
     </header>
@@ -109,13 +122,17 @@
       <!-- ============ CREATE ============ -->
       <section id="create" class="workmask">
         <div class="mask-head">
-          <h2>Create a project proof</h2>
+          <h2 id="createHeading">Create a project proof</h2>
           <p id="createGate" class="gate-note">
             Connect your wallet to create proofs. Verifying never requires login.
           </p>
+          <a href="#create" id="cancelVersionBtn" class="link-btn" hidden
+            >← Cancel — back to new project</a
+          >
         </div>
 
         <div id="createPanel" class="panel create-panel is-locked">
+          <div id="versionBanner" class="version-banner" hidden></div>
           <div class="form-row">
             <label for="projTitle">Project title</label>
             <input
@@ -193,10 +210,24 @@
                 <span class="hint" id="rootCost"></span
               ></label>
             </div>
+            <p class="permanence-note">
+              Anchored manifests — title, file paths and hashes — are written to the blockchain
+              <strong>publicly and irreversibly</strong>. Once anchored, they cannot be edited or
+              deleted.
+            </p>
             <div class="submit-row">
               <button class="btn btn-primary" id="submitBtn">Anchor proof on CKB</button>
               <button class="btn btn-ghost btn-small" id="clearBtn">Clear</button>
               <span id="submitStatus" class="status"></span>
+            </div>
+            <div id="anchorConfirm" class="inline-confirm" hidden>
+              <p id="anchorConfirmText"></p>
+              <div class="submit-row">
+                <button id="anchorConfirmYes" class="btn btn-primary btn-small">
+                  Confirm — open wallet
+                </button>
+                <button id="anchorConfirmNo" class="btn btn-ghost btn-small">Cancel</button>
+              </div>
             </div>
           </div>
         </div>
@@ -288,6 +319,11 @@
         <a href="https://github.com/ckb-devrel/ccc" target="_blank" rel="noopener">CCC</a>.
       </p>
       <p class="fine">Fingerprints only. Your files stay yours.</p>
+      <nav class="legal-links">
+        <a href="/impressum.html">Impressum</a>
+        <a href="/datenschutz.html">Datenschutzerklärung</a>
+        <a href="/haftungsausschluss.html">Haftungsausschluss</a>
+      </nav>
     </footer>
 
     <script type="module" src="/src/main.js"></script>
