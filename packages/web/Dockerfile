@@ -7,7 +7,7 @@
 #     -t vericell-web .
 #
 # syntax=docker/dockerfile:1
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 RUN corepack enable
 WORKDIR /repo
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./

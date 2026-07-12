@@ -4,7 +4,7 @@
 #   docker build -f packages/api/Dockerfile -t vericell-api .
 #
 # syntax=docker/dockerfile:1
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 # better-sqlite3 has no prebuilt musl (Alpine) binary for every version, so
 # it compiles from source on `pnpm install` — these are build-time only and
 # do not appear in the runtime stage below.
@@ -26,7 +26,7 @@ COPY packages/api packages/api
 RUN pnpm --filter api... run build
 
 # ---------------------------------------------------------------------------
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 # better-sqlite3's compiled addon links libstdc++ at runtime even though it
 # doesn't need the rest of the g++ toolchain.
 #
