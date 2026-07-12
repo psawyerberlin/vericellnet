@@ -100,13 +100,28 @@ button {
 .topnav a:hover {
   color: var(--ink);
 }
-.net-select {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
-  font-size: 0.8rem;
-  padding: 0.25rem 0.4rem;
+.net-badge {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+/* Prominent — a build pointed at a test chain should be unmistakable. */
+.net-badge--testnet,
+.net-badge--devnet {
+  background: #fff1c2;
+  color: #6b4c00;
+  border: 1px solid #e8c65a;
+}
+/* Subtle — mainnet is the expected default for a production deployment. */
+.net-badge--mainnet {
+  background: transparent;
   color: var(--muted);
+  border: 1px solid var(--line);
+  font-weight: 600;
 }
 .connect-btn {
   border: 1.5px solid var(--ink);
@@ -519,6 +534,18 @@ textarea:focus {
   background: var(--dark);
   color: #7dffd4;
 }
+.badge.pending {
+  background: #fff1c2;
+  color: #6b4c00;
+}
+.badge.provenance.idx {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.badge.provenance.dev {
+  background: #eef1ef;
+  color: var(--muted);
+}
 
 /* ---------- detail ---------- */
 .kv {
@@ -536,6 +563,62 @@ textarea:focus {
   margin: 0;
   font-family: var(--mono);
   word-break: break-all;
+}
+
+.version-timeline {
+  list-style: none;
+  margin: 0.8rem 0 1.2rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.version-timeline li {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+}
+.version-timeline li.is-live {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.version-timeline .vt-no {
+  font-family: var(--mono);
+  font-weight: 700;
+  min-width: 2.4em;
+}
+.version-timeline .vt-tx {
+  font-family: var(--mono);
+  color: var(--accent-ink);
+  text-decoration: none;
+  word-break: break-all;
+}
+.version-timeline .vt-tx:hover {
+  text-decoration: underline;
+}
+.version-timeline .vt-time {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+/* ---------- API & automation ---------- */
+.code-block {
+  background: var(--dark);
+  color: #d7ffe9;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0.9rem 0;
 }
 
 /* ---------- how it works ---------- */

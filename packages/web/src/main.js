@@ -6,15 +6,138 @@
  * live CKB cell locked to the user's wallet.
  *
  * Wallet + chain access via CCC: https://github.com/ckb-devrel/ccc
+ * Hashing/Merkle/manifest logic and the network flag are shared with the
+ * rest of the stack via `core` (packages/core) — no duplicated crypto here.
  */
 import { ccc } from "@ckb-ccc/ccc";
+import {
+  sha256Hex,
+  projectHash as coreProjectHash,
+  merkleRoot as coreMerkleRoot,
+  encodeManifest,
+  estimateCellCost,
+  NETWORK,
+  EXPLORER_URL,
+  isMainnet,
+} from "core";
+
+/* ================================================================== */
+/* API client — global index, with localStorage as offline fallback   */
+/* ================================================================== */
+const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+
+async function apiFetch(path) {
+  if (!API_BASE) throw new Error("no API configured (VITE_API_URL unset)");
+  const res = await fetch(`${API_BASE}${path}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`API ${res.status} on ${path}`);
+  return res.json();
+}
+
+function apiSearchProjects(params) {
+  const qs = new URLSearchParams(params).toString();
+  return apiFetch(`/api/v1/projects?${qs}`);
+}
+function apiGetProject(unid) {
+  return apiFetch(`/api/v1/projects/${encodeURIComponent(unid)}`);
+}
+function apiGetVersion(txHash) {
+  return apiFetch(`/api/v1/versions/${txHash}`);
+}
+
+function looksLikeHex64(q) {
+  return /^(0x)?[a-fA-F0-9]{64}$/.test(q);
+}
+function looksLikeAddress(q) {
+  return /^ck[bt]1[0-9a-z]+$/i.test(q);
+}
+
+/** project list row (GET /projects, /projects/{unid}) -> a render-friendly search hit. */
+function projectRowToHit(p) {
+  return {
+    provenance: "index",
+    unid: p.unid,
+    txHash: p.live_tx_hash,
+    index: p.live_index ?? 0,
+    title: p.title,
+    source: p.source_url,
+    created: p.created_at,
+    active: p.active,
+    address: p.ckb_address,
+    project_sha256: null,
+    merkle_root: null,
+    hashes: [],
+    files: null,
+    count: null,
+  };
+}
+
+/** GET /versions/{txHash} -> a search hit, for direct tx-hash lookups. */
+function versionToHit(v) {
+  return {
+    provenance: "index",
+    unid: v.unid,
+    txHash: v.tx_hash,
+    index: 0,
+    title: v.manifest?.title ?? "(untitled)",
+    source: v.manifest?.source ?? null,
+    created: v.manifest?.created ?? null,
+    active: v.live === true,
+    address: v.owner_address,
+    project_sha256: v.project_sha256,
+    merkle_root: v.merkle_root,
+    hashes: (v.manifest?.files ?? []).map((f) => f.h),
+    files: v.manifest?.files ?? null,
+    count: v.manifest?.count ?? (v.manifest?.files ?? []).length,
+  };
+}
+
+/** Query the global index for a search string. Never throws — signals `apiDown` instead. */
+async function apiSearch(q) {
+  try {
+    if (looksLikeHex64(q)) {
+      const hex = q.replace(/^0x/, "").toLowerCase();
+      const byHash = await apiSearchProjects({ hash: hex, limit: 20 });
+      if (byHash?.data?.length) return { hits: byHash.data.map(projectRowToHit), apiDown: false };
+
+      const txHash = q.startsWith("0x") ? q : `0x${q}`;
+      const version = await apiGetVersion(txHash);
+      return { hits: version ? [versionToHit(version)] : [], apiDown: false };
+    }
+    if (looksLikeAddress(q)) {
+      const byAddr = await apiSearchProjects({ address: q, limit: 20 });
+      return { hits: (byAddr?.data ?? []).map(projectRowToHit), apiDown: false };
+    }
+    const byTitle = await apiSearchProjects({ q, limit: 20 });
+    return { hits: (byTitle?.data ?? []).map(projectRowToHit), apiDown: false };
+  } catch (e) {
+    console.warn("global index unavailable, showing local results only", e);
+    return { hits: [], apiDown: true };
+  }
+}
+
+/** API hits take priority; a local hit already represented by an API hit (same tx) is dropped. */
+function mergeHits(apiHits, localHits) {
+  const seen = new Set(apiHits.map((h) => h.txHash).filter(Boolean));
+  return [...apiHits, ...localHits.filter((h) => !h.txHash || !seen.has(h.txHash))];
+}
 
 /* ================================================================== */
 /* State                                                              */
 /* ================================================================== */
+function makeChainClient() {
+  if (NETWORK === "mainnet") return new ccc.ClientPublicMainnet();
+  if (NETWORK === "devnet") {
+    return new ccc.ClientPublicTestnet({
+      url: import.meta.env.VITE_DEVNET_RPC_URL || "http://127.0.0.1:28114",
+    });
+  }
+  return new ccc.ClientPublicTestnet();
+}
+
 const state = {
-  network: "testnet",
-  client: new ccc.ClientPublicTestnet(),
+  network: NETWORK, // fixed at build time (core/network.ts) — see the top-bar badge
+  client: makeChainClient(),
   signer: null,
   address: null,
   entries: [], // [{ p: path, h: sha256hex, bytes }]
@@ -22,59 +145,25 @@ const state = {
 
 const MANIFEST_APP = "vericell";
 const MANIFEST_VERSION = 1;
-const EXPLORER = {
-  testnet: "https://testnet.explorer.nervos.org",
-  mainnet: "https://explorer.nervos.org",
-};
 
 /* ================================================================== */
-/* Hashing helpers                                                    */
+/* Hashing / manifest helpers — core does the actual crypto           */
 /* ================================================================== */
-async function sha256Hex(data /* ArrayBuffer|Uint8Array */) {
-  const buf = await crypto.subtle.digest("SHA-256", data);
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+/** core's FileEntry shape is { path, hash }; the UI works in { p, h }. */
+function toFileEntries(entries) {
+  return entries.map((e) => ({ path: e.p, hash: e.h }));
 }
-async function sha256HexOfText(text) {
-  return sha256Hex(new TextEncoder().encode(text));
-}
-function hexToBytes(hex) {
-  const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
-  return out;
-}
-
-/** Overall project hash: SHA-256 over the sorted "path\nhash\n" lines.
- *  Deterministic — anyone can reproduce it from the file list. */
 async function projectHash(entries) {
-  const canon = [...entries]
-    .sort((a, b) => a.p.localeCompare(b.p))
-    .map((e) => `${e.p}\n${e.h}\n`)
-    .join("");
-  return sha256HexOfText(canon);
+  return coreProjectHash(toFileEntries(entries));
 }
-
-/** Merkle root over sorted leaf hashes (SHA-256 of concatenated pairs). */
 async function merkleRoot(entries) {
-  let level = [...entries].sort((a, b) => a.p.localeCompare(b.p)).map((e) => hexToBytes(e.h));
-  if (level.length === 0) return null;
-  while (level.length > 1) {
-    const next = [];
-    for (let i = 0; i < level.length; i += 2) {
-      const left = level[i];
-      const right = level[i + 1] ?? level[i]; // duplicate last on odd count
-      const cat = new Uint8Array(left.length + right.length);
-      cat.set(left, 0);
-      cat.set(right, left.length);
-      next.push(new Uint8Array(await crypto.subtle.digest("SHA-256", cat)));
-    }
-    level = next;
-  }
-  return [...level[0]].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return coreMerkleRoot(toFileEntries(entries));
 }
 
 /* ================================================================== */
 /* Local registry (browser index of created proofs).                  */
-/* Production: replace with an indexer service — see TECHNICAL.md.    */
+/* Offline/no-API fallback and instant "this device" results — the     */
+/* API's index is authoritative when reachable.                       */
 /* ================================================================== */
 function regKey() {
   return `vericell:${state.network}`;
@@ -116,18 +205,6 @@ async function connectWallet() {
   }
 }
 
-function switchNetwork(net) {
-  state.network = net;
-  state.client = net === "mainnet" ? new ccc.ClientPublicMainnet() : new ccc.ClientPublicTestnet();
-  // force re-connect on the new network
-  state.signer = null;
-  state.address = null;
-  const btn = document.getElementById("connectBtn");
-  btn.textContent = "Connect wallet";
-  btn.classList.remove("is-connected");
-  document.getElementById("createPanel").classList.add("is-locked");
-}
-
 /* ================================================================== */
 /* Manifest & on-chain anchoring                                      */
 /* ================================================================== */
@@ -148,10 +225,6 @@ function buildManifest({ compact, title, url, projHash, root, prev, genesis }) {
   return m;
 }
 
-function manifestBytes(manifest) {
-  return ccc.bytesFrom(JSON.stringify(manifest), "utf8");
-}
-
 /** Create the proof cell. Optionally consumes the previous version's cell. */
 async function anchorProof({ compact, prevOutPoint }) {
   if (!state.signer) throw new Error("Connect a wallet first.");
@@ -163,7 +236,7 @@ async function anchorProof({ compact, prevOutPoint }) {
   const root = await merkleRoot(state.entries);
 
   const manifest = buildManifest({ compact, title, url, projHash, root });
-  const data = manifestBytes(manifest);
+  const data = encodeManifest(manifest);
 
   const { script: lock } = await state.signer.getRecommendedAddressObj();
 
@@ -337,6 +410,7 @@ function setStatus(id, msg, err = false) {
 
 /** Signature element: SHA-256 rendered as 16 colored bars. */
 function fpStrip(hex, el) {
+  if (!hex || !el) return;
   el.innerHTML = "";
   for (let i = 0; i < 32; i += 2) {
     const span = document.createElement("span");
@@ -344,6 +418,51 @@ function fpStrip(hex, el) {
     const light = 35 + (parseInt(hex.substr(i * 2 + 3, 1), 16) % 30);
     span.style.background = `hsl(${hue} 55% ${light}%)`;
     el.appendChild(span);
+  }
+}
+
+function renderNetworkBadge() {
+  const el = document.getElementById("networkBadge");
+  if (!el) return;
+  el.textContent = NETWORK.toUpperCase();
+  el.classList.add(`net-badge--${NETWORK}`);
+  el.title = isMainnet()
+    ? "Mainnet build — anchoring costs real CKB."
+    : `${NETWORK} build — for testing only.`;
+}
+
+/** curl examples in the "API & automation" section, filled in with the actual API base. */
+function renderApiSection() {
+  const base = API_BASE || "https://api.vericell.example";
+  const prepareEl = document.getElementById("curlPrepare");
+  const submitEl = document.getElementById("curlSubmit");
+  const verifyEl = document.getElementById("curlVerify");
+  if (prepareEl) {
+    prepareEl.textContent =
+      `# 1. Prepare an unsigned anchoring transaction (non-custodial — you sign it, not the API)\n` +
+      `curl -s -X POST ${base}/api/v1/proofs/prepare \\\n` +
+      `  -H "Authorization: Bearer $VERICELL_API_KEY" \\\n` +
+      `  -H "Content-Type: application/json" \\\n` +
+      `  -d '{"manifest":{"title":"my-project","files":[{"p":"README.md","h":"<sha256>"}]},"payer":{"lock":{...}}}'`;
+  }
+  if (submitEl) {
+    submitEl.textContent =
+      `# 2. Sign the returned tx locally (vericell CLI or any CCC signer), then submit it\n` +
+      `curl -s -X POST ${base}/api/v1/proofs/submit \\\n` +
+      `  -H "Authorization: Bearer $VERICELL_API_KEY" \\\n` +
+      `  -H "Content-Type: application/json" \\\n` +
+      `  -d '{"tx": <signed-tx-json>}'`;
+  }
+  if (verifyEl) {
+    verifyEl.textContent =
+      `# Verify a file's hash — no API key needed, nothing is uploaded\n` +
+      `sha256sum myfile.zip\n` +
+      `curl -s ${base}/api/v1/verify/<sha256>`;
+  }
+  const docsLink = document.getElementById("apiDocsLink");
+  if (docsLink) {
+    docsLink.href = `${base}/api/v1/docs`;
+    if (!API_BASE) docsLink.textContent = "interactive API docs (set VITE_API_URL to enable)";
   }
 }
 
@@ -368,35 +487,34 @@ async function renderManifest() {
     const ph = await projectHash(state.entries);
     document.getElementById("projHash").textContent = ph;
     fpStrip(ph, document.getElementById("projFp"));
-    // cost estimate: cell = data bytes + 61 bytes overhead, 1 CKB per byte
-    const full = manifestBytes(
-      buildManifest({
-        compact: false,
-        title: document.getElementById("projTitle").value || "Untitled project",
-        url: document.getElementById("projUrl").value,
-        projHash: ph,
-        root: ph,
-      }),
-    ).length;
-    const compact = manifestBytes(
-      buildManifest({
-        compact: true,
-        title: document.getElementById("projTitle").value || "Untitled project",
-        url: document.getElementById("projUrl").value,
-        projHash: ph,
-        root: ph,
-      }),
-    ).length;
-    document.getElementById("fullCost").textContent = `≈ ${full + 65} CKB locked (refundable)`;
-    document.getElementById("rootCost").textContent = `≈ ${compact + 65} CKB locked (refundable)`;
+    const manifest = buildManifest({
+      compact: false,
+      title: document.getElementById("projTitle").value || "Untitled project",
+      url: document.getElementById("projUrl").value,
+      projHash: ph,
+      root: ph,
+    });
+    const cost = estimateCellCost(manifest);
+    document.getElementById("fullCost").textContent = `≈ ${cost.full} CKB locked (refundable)`;
+    document.getElementById("rootCost").textContent = `≈ ${cost.compact} CKB locked (refundable)`;
   }
 }
 
-function renderResults(records, matchedHash = null) {
+function renderResults(records, apiDown = false, matchedHash = null) {
   const box = document.getElementById("searchResults");
   box.innerHTML = "";
+  if (apiDown) {
+    const note = document.createElement("p");
+    note.className = "gate-note";
+    note.textContent =
+      "Global index unavailable right now — showing results from this device only.";
+    box.appendChild(note);
+  }
   if (!records.length) {
-    box.innerHTML = `<p class="gate-note">No local matches. Paste a transaction hash to look a proof up directly on-chain.</p>`;
+    const p = document.createElement("p");
+    p.className = "gate-note";
+    p.textContent = "No matches. Paste a transaction hash to look a proof up directly on-chain.";
+    box.appendChild(p);
     return;
   }
   for (const r of records) {
@@ -405,40 +523,186 @@ function renderResults(records, matchedHash = null) {
     a.href = `#detail`;
     a.innerHTML = `
       <span class="rc-title"></span>
-      ${r.active ? '<span class="badge live">checking…</span>' : '<span class="badge dead">superseded</span>'}
+      <span class="badge provenance ${r.provenance === "index" ? "idx" : "dev"}">${
+        r.provenance === "index" ? "global index" : "this device"
+      }</span>
+      ${
+        r.provenance === "index"
+          ? `<span class="badge status ${r.active ? "live" : "dead"}">${r.active ? "LIVE" : "consumed"}</span>`
+          : '<span class="badge status live">checking…</span>'
+      }
       ${matchedHash ? '<span class="badge match">hash match</span>' : ""}
       <div class="fp-strip small"></div>
       <div class="rc-meta"></div>`;
-    a.querySelector(".rc-title").textContent = r.title;
+    a.querySelector(".rc-title").textContent = r.title || "(untitled)";
     a.querySelector(".rc-meta").textContent =
-      `${r.count} entries · ${new Date(r.created).toLocaleString()} · tx ${r.txHash.slice(0, 14)}…`;
+      `${r.count ?? "?"} entries · ${r.created ? new Date(r.created).toLocaleString() : "—"} · tx ${
+        r.txHash ? r.txHash.slice(0, 14) + "…" : "—"
+      }`;
     fpStrip(r.project_sha256, a.querySelector(".fp-strip"));
     a.onclick = () => showDetail(r);
     box.appendChild(a);
-    // refresh live status from chain
-    fetchProofFromChain(r.txHash, r.index).then(({ live }) => {
-      const b = a.querySelector(".badge.live");
-      if (!b) return;
-      if (live === true) b.textContent = "LIVE";
-      else if (live === false) {
-        b.textContent = "consumed";
-        b.className = "badge dead";
-      } else b.textContent = "unknown";
-    });
+
+    if (r.provenance === "index" && !r.project_sha256 && r.unid) {
+      // list rows don't carry a hash — fill the fingerprint strip in lazily.
+      apiGetProject(r.unid)
+        .then((detail) =>
+          fpStrip(detail?.live_version?.project_sha256, a.querySelector(".fp-strip")),
+        )
+        .catch(() => {});
+    }
+    if (r.provenance === "device" && r.txHash) {
+      fetchProofFromChain(r.txHash, r.index).then(({ live }) => {
+        const badgeEl = a.querySelector(".badge.status");
+        if (!badgeEl) return;
+        if (live === true) badgeEl.textContent = "LIVE";
+        else if (live === false) {
+          badgeEl.textContent = "consumed";
+          badgeEl.className = "badge status dead";
+        } else badgeEl.textContent = "unknown";
+      });
+    }
   }
 }
 
+async function runSearch(q, { matchedHash = null } = {}) {
+  const localHits = searchRegistry(q).map((r) => ({ ...r, provenance: "device" }));
+  const { hits: apiHits, apiDown } = q ? await apiSearch(q) : { hits: [], apiDown: false };
+  renderResults(mergeHits(apiHits, localHits), apiDown, matchedHash);
+}
+
+/** Project detail: the global index (version timeline, live/consumed from the API) when
+ *  reachable; a direct on-chain lookup of just this one version otherwise. */
 async function showDetail(rec) {
   const sec = document.getElementById("detail");
   const panel = document.getElementById("detailPanel");
   sec.hidden = false;
-  panel.innerHTML = `<p class="gate-note">Loading on-chain proof…</p>`;
+  panel.innerHTML = `<p class="gate-note">Loading proof…</p>`;
   sec.scrollIntoView({ behavior: "smooth" });
 
+  let detail = null;
+  try {
+    detail = rec.unid ? await apiGetProject(rec.unid) : null;
+  } catch (e) {
+    console.warn("project detail via the global index failed; falling back to chain-only view", e);
+  }
+
+  if (detail) await renderDetailFromApi(detail, rec);
+  else await renderDetailFromChain(rec);
+}
+
+function explorerTxUrl(txHash) {
+  return `${EXPLORER_URL}/transaction/${txHash}`;
+}
+
+function wireNewVersionButton(panel, { txHash, index, genesis, title, sourceUrl }) {
+  const btn = panel.querySelector("#newVersionBtn");
+  if (!btn) return;
+  btn.onclick = () => {
+    if (!state.signer) {
+      alert("Connect your wallet first.");
+      return;
+    }
+    state.pendingPrev = {
+      outPoint: { txHash, index: ccc.numFrom(index) },
+      genesis,
+      rec: { txHash },
+    };
+    document.getElementById("projTitle").value = title;
+    if (sourceUrl) document.getElementById("projUrl").value = sourceUrl;
+    document.getElementById("create").scrollIntoView({ behavior: "smooth" });
+    setStatus(
+      "submitStatus",
+      "New-version mode: the previous cell will be consumed when you anchor. Add the new files.",
+    );
+  };
+}
+
+/** Rendered from GET /projects/{unid}: full version chain, live/consumed from the index. */
+async function renderDetailFromApi(detail, rec) {
+  const panel = document.getElementById("detailPanel");
+  const live = detail.live_version;
+
+  let manifest = null;
+  if (live) {
+    try {
+      manifest = (await apiGetVersion(live.tx_hash))?.manifest ?? null;
+    } catch {
+      /* best-effort — the timeline below doesn't depend on this */
+    }
+  }
+  const files = manifest?.files || rec.files || [];
+
+  panel.innerHTML = `
+    <h3></h3>
+    <div class="fp-strip"></div>
+    <dl class="kv">
+      <dt>Status</dt><dd>${
+        detail.active
+          ? '<span class="badge live">LIVE — current version</span>'
+          : '<span class="badge dead">withdrawn — no live version</span>'
+      }</dd>
+      <dt>Project ID (UNID)</dt><dd>${detail.unid}</dd>
+      <dt>Overall SHA-256</dt><dd>${live?.project_sha256 ?? "—"}</dd>
+      <dt>Merkle root</dt><dd>${live?.merkle_root ?? "—"}</dd>
+      <dt>Created</dt><dd>${new Date(detail.created_at).toISOString()}</dd>
+      <dt>Owner (lock)</dt><dd>${detail.ckb_address}</dd>
+      <dt>Source URL</dt><dd>${
+        detail.source_url
+          ? `<a href="${detail.source_url}" target="_blank" rel="noopener">${detail.source_url}</a>`
+          : "—"
+      }</dd>
+    </dl>
+    <p><strong>Version history</strong> — genesis → live, from the global index:</p>
+    <ol class="version-timeline">
+      ${detail.versions
+        .map(
+          (v) => `
+        <li class="${v.tx_hash === detail.live_tx_hash ? "is-live" : ""}">
+          <span class="vt-no">v${v.version_no ?? "?"}</span>
+          <span class="badge ${v.status === "consumed" ? "dead" : v.status === "pending" ? "pending" : "live"}">${v.status}</span>
+          <a class="vt-tx" href="${explorerTxUrl(v.tx_hash)}" target="_blank" rel="noopener">${v.tx_hash.slice(0, 18)}…</a>
+          <span class="vt-time">${v.block_time ? new Date(v.block_time).toLocaleString() : "pending"}</span>
+        </li>`,
+        )
+        .join("")}
+    </ol>
+    ${
+      files.length
+        ? `<p><strong>${files.length}</strong> fingerprinted entries:</p>
+      <ul class="file-list">${files
+        .map(
+          (f) =>
+            `<li><span class="fpath">${escapeHtml(f.p)}</span><span class="fhash">${f.h}</span><span></span></li>`,
+        )
+        .join("")}</ul>`
+        : `<p class="gate-note">Compact proof — individual file hashes are represented by the Merkle root.</p>`
+    }
+    <div class="submit-row">
+      ${detail.active ? '<button class="btn btn-ghost btn-small" id="newVersionBtn">Publish new version (consume this cell)</button>' : ""}
+      <span class="gate-note">Source: global index${API_BASE ? ` (${API_BASE})` : ""}</span>
+    </div>`;
+  panel.querySelector("h3").textContent = detail.title;
+  fpStrip(live?.project_sha256, panel.querySelector(".fp-strip"));
+
+  if (detail.active && detail.live_tx_hash) {
+    wireNewVersionButton(panel, {
+      txHash: detail.live_tx_hash,
+      index: detail.live_index ?? 0,
+      genesis: detail.unid,
+      title: detail.title,
+      sourceUrl: detail.source_url,
+    });
+  }
+}
+
+/** Fallback when the global index is unreachable or doesn't (yet) have this project:
+ *  the single version the caller clicked into, read straight from the chain. */
+async function renderDetailFromChain(rec) {
+  const panel = document.getElementById("detailPanel");
   const chain = await fetchProofFromChain(rec.txHash, rec.index);
   const m = chain.manifest || rec;
   const files = m.files || rec.files || [];
-  const explorer = `${EXPLORER[state.network]}/transaction/${rec.txHash}`;
 
   panel.innerHTML = `
     <h3></h3>
@@ -458,7 +722,7 @@ async function showDetail(rec) {
       <dt>Block timestamp</dt><dd>${chain.blockTime ? chain.blockTime.toISOString() + " (authoritative)" : "pending / unavailable"}</dd>
       <dt>Owner (lock)</dt><dd>${chain.lockOwner || rec.address || "—"}</dd>
       <dt>Source URL</dt><dd>${m.source ? `<a href="${m.source}" target="_blank" rel="noopener">${m.source}</a>` : "—"}</dd>
-      <dt>Transaction</dt><dd><a href="${explorer}" target="_blank" rel="noopener">${rec.txHash}</a></dd>
+      <dt>Transaction</dt><dd><a href="${explorerTxUrl(rec.txHash)}" target="_blank" rel="noopener">${rec.txHash}</a></dd>
     </dl>
     ${
       files.length
@@ -473,28 +737,18 @@ async function showDetail(rec) {
     }
     <div class="submit-row">
       <button class="btn btn-ghost btn-small" id="newVersionBtn">Publish new version (consume this cell)</button>
+      <span class="gate-note">${API_BASE ? "Global index unavailable — direct chain lookup." : "Not connected to a global index — direct chain lookup."}</span>
     </div>`;
   panel.querySelector("h3").textContent = m.title || rec.title;
   fpStrip(m.project_sha256 || rec.project_sha256, panel.querySelector(".fp-strip"));
 
-  panel.querySelector("#newVersionBtn").onclick = () => {
-    if (!state.signer) {
-      alert("Connect your wallet first.");
-      return;
-    }
-    state.pendingPrev = {
-      outPoint: { txHash: rec.txHash, index: ccc.numFrom(rec.index) },
-      genesis: rec.unid,
-      rec,
-    };
-    document.getElementById("projTitle").value = rec.title;
-    if (rec.source) document.getElementById("projUrl").value = rec.source;
-    document.getElementById("create").scrollIntoView({ behavior: "smooth" });
-    setStatus(
-      "submitStatus",
-      "New-version mode: the previous cell will be consumed when you anchor. Add the new files.",
-    );
-  };
+  wireNewVersionButton(panel, {
+    txHash: rec.txHash,
+    index: rec.index,
+    genesis: rec.unid,
+    title: rec.title,
+    sourceUrl: rec.source,
+  });
 }
 
 function escapeHtml(s) {
@@ -510,8 +764,7 @@ function escapeHtml(s) {
 async function verifyFile(file) {
   const h = await sha256Hex(await file.arrayBuffer());
   document.getElementById("searchInput").value = h;
-  const hits = searchRegistry(h);
-  renderResults(hits, h);
+  await runSearch(h, { matchedHash: h });
   document.getElementById("verify").scrollIntoView({ behavior: "smooth" });
 }
 
@@ -538,8 +791,9 @@ function wireDropzone(el, onFiles) {
 }
 
 function init() {
+  renderNetworkBadge();
+  renderApiSection();
   document.getElementById("connectBtn").onclick = connectWallet;
-  document.getElementById("networkSelect").onchange = (e) => switchNetwork(e.target.value);
 
   // hero demo
   wireDropzone(document.getElementById("heroDrop"), async (files) => {
@@ -550,7 +804,7 @@ function init() {
     fpStrip(h, out.querySelector("[data-fp]"));
     document.getElementById("heroSearchBtn").onclick = () => {
       document.getElementById("searchInput").value = h;
-      renderResults(searchRegistry(h), h);
+      runSearch(h, { matchedHash: h });
       document.getElementById("verify").scrollIntoView({ behavior: "smooth" });
     };
   });
@@ -622,34 +876,9 @@ function init() {
   };
 
   // search & verify
-  document.getElementById("searchBtn").onclick = async () => {
+  document.getElementById("searchBtn").onclick = () => {
     const q = document.getElementById("searchInput").value.trim();
-    let hits = searchRegistry(q);
-    // direct on-chain lookup by tx hash
-    if (!hits.length && /^(0x)?[a-fA-F0-9]{64}$/.test(q)) {
-      const txHash = q.startsWith("0x") ? q : "0x" + q;
-      const chain = await fetchProofFromChain(txHash, 0);
-      if (chain.manifest?.app === MANIFEST_APP) {
-        hits = [
-          {
-            unid: chain.manifest.genesis || txHash,
-            txHash,
-            index: 0,
-            title: chain.manifest.title,
-            source: chain.manifest.source || null,
-            created: chain.manifest.created,
-            active: chain.live !== false,
-            address: chain.lockOwner,
-            project_sha256: chain.manifest.project_sha256,
-            merkle_root: chain.manifest.merkle_root || null,
-            hashes: (chain.manifest.files || []).map((f) => f.h),
-            files: chain.manifest.files || null,
-            count: chain.manifest.count ?? (chain.manifest.files || []).length,
-          },
-        ];
-      }
-    }
-    renderResults(hits);
+    runSearch(q);
   };
   document.getElementById("searchInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") document.getElementById("searchBtn").click();

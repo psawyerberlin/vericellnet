@@ -10,7 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ckb-ccc/ccc": "^1.2.3"
+    "@ckb-ccc/ccc": "^1.2.3",
+    "core": "workspace:*"
   },
   "devDependencies": {
     "vite": "^6.0.0"

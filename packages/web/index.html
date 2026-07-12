@@ -39,10 +39,12 @@
         <a href="#create">Create proof</a>
         <a href="#verify">Verify</a>
         <a href="#how">How it works</a>
-        <select id="networkSelect" class="net-select" title="CKB network">
-          <option value="testnet" selected>Testnet</option>
-          <option value="mainnet">Mainnet</option>
-        </select>
+        <a href="#api">API</a>
+        <span
+          id="networkBadge"
+          class="net-badge"
+          title="Active network — set at build time, see core/network.ts"
+        ></span>
       </nav>
       <button id="connectBtn" class="connect-btn">Connect wallet</button>
     </header>
@@ -252,6 +254,30 @@
           CKB; a full manifest scales with the number of files. Capacity is
           <em>locked, not spent</em> — consume the cell and the CKB returns to you.
         </p>
+      </section>
+
+      <!-- ============ API & AUTOMATION ============ -->
+      <section id="api" class="workmask">
+        <div class="mask-head">
+          <h2>API &amp; automation</h2>
+          <p class="gate-note">Anchor and verify from CI/CD, scripts, or any HTTP client.</p>
+        </div>
+        <div class="panel">
+          <p>
+            VeriCell exposes a REST API for automation, mirroring what this page does in the
+            browser. Get an API key from your VeriCell operator (<code>POST /api/v1/keys</code>,
+            admin-guarded), export it as <code>VERICELL_API_KEY</code>, then:
+          </p>
+          <pre class="code-block" id="curlPrepare"></pre>
+          <pre class="code-block" id="curlSubmit"></pre>
+          <pre class="code-block" id="curlVerify"></pre>
+          <p class="gate-note">
+            Non-custodial by design: the API only <em>prepares</em> the transaction — you sign it
+            locally (the <code>vericell</code> CLI or any CCC signer), so your key never leaves your
+            machine. Full reference, every endpoint and a try-it-out console:
+            <a id="apiDocsLink" href="#" target="_blank" rel="noopener">interactive API docs</a>.
+          </p>
+        </div>
       </section>
     </main>
 
