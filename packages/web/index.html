@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="/theme-init.js"></script>
     <title>VeriCell — Prove your work on Nervos CKB</title>
     <meta
       name="description"
@@ -36,10 +37,29 @@
         VeriCell
       </a>
       <nav class="topnav">
-        <a href="#create">Create proof</a>
-        <a href="#verify">Verify</a>
-        <a href="#how">How it works</a>
-        <a href="#api">API</a>
+        <button
+          id="navToggle"
+          type="button"
+          class="nav-toggle"
+          aria-expanded="false"
+          aria-controls="navLinks"
+          aria-label="Open menu"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M3 6h18M3 12h18M3 18h18"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+        <div id="navLinks" class="nav-links">
+          <a href="#create">Create proof</a>
+          <a href="/verify">Verify</a>
+          <a href="#how">How it works</a>
+          <a id="apiNavLink" href="#" target="_blank" rel="noopener">API</a>
+        </div>
         <div class="net-switch">
           <button
             id="networkBadge"
@@ -58,6 +78,27 @@
             </div>
           </div>
         </div>
+        <button
+          id="themeToggle"
+          type="button"
+          class="theme-toggle"
+          aria-label="Switch to dark theme"
+          aria-pressed="false"
+          title="Switch to dark theme"
+        >
+          <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2" />
+            <path
+              d="M12 2.5v2.5M12 19v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2.5 12H5M19 12h2.5M4.2 19.8l1.8-1.8M18 6l1.8-1.8"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" fill="currentColor" />
+          </svg>
+        </button>
       </nav>
       <button id="connectBtn" class="connect-btn">Connect wallet</button>
     </header>
@@ -66,7 +107,7 @@
       <!-- ============ HERO ============ -->
       <section class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Proof of authorship · integrity · time</p>
+          <p class="eyebrow">Proof of Existence, Integrity, Ownership and Time</p>
           <h1>Your work, fingerprinted.<br />Anchored on CKB.</h1>
           <p class="lede">
             AI makes it trivial to alter files, images and code. A SHA-256 hash proves a file is
@@ -129,6 +170,22 @@
           <a href="#create" id="cancelVersionBtn" class="link-btn" hidden
             >← Cancel — back to new project</a
           >
+          <button type="button" id="resetBtn" class="link-btn">Start over</button>
+        </div>
+
+        <div id="resetConfirm" class="inline-confirm" hidden>
+          <p id="resetConfirmText">
+            Starting over will discard your current in-progress proof — selected files, hashes and
+            manifest. Continue?
+          </p>
+          <div class="submit-row">
+            <button id="resetConfirmYes" type="button" class="btn btn-primary btn-small">
+              Start over
+            </button>
+            <button id="resetConfirmNo" type="button" class="btn btn-ghost btn-small">
+              Cancel
+            </button>
+          </div>
         </div>
 
         <div id="createPanel" class="panel create-panel is-locked">
@@ -216,10 +273,11 @@
               deleted.
             </p>
             <div class="submit-row">
-              <button class="btn btn-primary" id="submitBtn">Anchor proof on CKB</button>
+              <button class="btn btn-primary" id="submitBtn">Create new project</button>
               <button class="btn btn-ghost btn-small" id="clearBtn">Clear</button>
               <span id="submitStatus" class="status"></span>
             </div>
+            <p id="submitHint" class="gate-note" hidden></p>
             <div id="anchorConfirm" class="inline-confirm" hidden>
               <p id="anchorConfirmText"></p>
               <div class="submit-row">
@@ -229,6 +287,35 @@
                 <button id="anchorConfirmNo" class="btn btn-ghost btn-small">Cancel</button>
               </div>
             </div>
+          </div>
+          <div id="anchorSuccess" class="inline-confirm" hidden>
+            <p>
+              Transaction broadcast — view on explorer.<br />
+              <code class="hash-code" id="anchorSuccessHash"></code>
+            </p>
+            <div class="submit-row">
+              <a
+                id="anchorSuccessLink"
+                class="btn btn-ghost btn-small"
+                href="#"
+                target="_blank"
+                rel="noopener"
+                >View on explorer</a
+              >
+              <button id="anchorSuccessCopy" type="button" class="btn btn-ghost btn-small">
+                Copy tx hash
+              </button>
+              <button id="anchorSuccessCert" type="button" class="btn btn-ghost btn-small">
+                Download certificate
+              </button>
+              <button id="anchorSuccessCertPdf" type="button" class="btn btn-ghost btn-small">
+                Certificate (PDF)
+              </button>
+              <button id="anchorSuccessManifest" type="button" class="btn btn-ghost btn-small">
+                Download manifest (JSON)
+              </button>
+            </div>
+            <p id="anchorSuccessCertStatus" class="status"></p>
           </div>
         </div>
       </section>
@@ -287,27 +374,529 @@
         </p>
       </section>
 
-      <!-- ============ API & AUTOMATION ============ -->
-      <section id="api" class="workmask">
+      <!-- ============ USE CASES (phase 6) ============ -->
+      <section id="use-cases" class="workmask">
         <div class="mask-head">
-          <h2>API &amp; automation</h2>
-          <p class="gate-note">Anchor and verify from CI/CD, scripts, or any HTTP client.</p>
+          <h2>Use cases for VeriCell</h2>
         </div>
         <div class="panel">
-          <p>
-            VeriCell exposes a REST API for automation, mirroring what this page does in the
-            browser. Get an API key from your VeriCell operator (<code>POST /api/v1/keys</code>,
-            admin-guarded), export it as <code>VERICELL_API_KEY</code>, then:
-          </p>
-          <pre class="code-block" id="curlPrepare"></pre>
-          <pre class="code-block" id="curlSubmit"></pre>
-          <pre class="code-block" id="curlVerify"></pre>
+          <div class="usecase-grid">
+            <details class="usecase">
+              <summary>Software releases</summary>
+              <div class="usecase-body">
+                <p>
+                  Developers can anchor every release package, installer, source ZIP, checksum file,
+                  and changelog.
+                </p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Open-source releases</li>
+                    <li>GitHub release assets</li>
+                    <li>Desktop software installers</li>
+                    <li>Mobile app builds</li>
+                    <li>Internal enterprise tools</li>
+                    <li>SaaS deployment bundles</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>This exact release existed at block time T.</li>
+                    <li>The files were not modified after release.</li>
+                    <li>The current live cell shows the latest official version.</li>
+                    <li>Older versions remain verifiable as consumed cells.</li>
+                  </ul>
+                </div>
+                <p class="hint">
+                  Note: fits especially well since VeriCell already ships CLI, REST API, and GitHub
+                  Actions/CI-CD automation paths.
+                </p>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Website and web-app releases</summary>
+              <div class="usecase-body">
+                <p>
+                  A team can hash and anchor the compiled frontend build folder before deployment.
+                </p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Static websites</li>
+                    <li>Landing pages</li>
+                    <li>Web apps</li>
+                    <li>Documentation portals</li>
+                    <li>Compliance-sensitive web content</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>This exact website build existed at time T.</li>
+                    <li>
+                      A user can verify whether a live website matches the official anchored
+                      version.
+                    </li>
+                    <li>
+                      If the website changes, the old build becomes a consumed/superseded version.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Legal documents and contracts</summary>
+              <div class="usecase-body">
+                <p>
+                  A contract, agreement, signed PDF, or negotiation draft can be hashed locally and
+                  anchored.
+                </p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>NDAs</li>
+                    <li>Service agreements</li>
+                    <li>Employment contracts</li>
+                    <li>Partnership agreements</li>
+                    <li>Terms and conditions</li>
+                    <li>Signed PDFs</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>This exact document existed at time T.</li>
+                    <li>The document has not changed.</li>
+                    <li>The wallet that anchored it is linked to the submitter.</li>
+                    <li>Later versions can be linked as official successors.</li>
+                  </ul>
+                </div>
+                <p class="hint">
+                  Wording note: avoid claiming "legal authorship" — this is proof that the wallet
+                  owner knew the hashes at block time, not legal authorship.
+                </p>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Invoices, purchase orders, and business records</summary>
+              <div class="usecase-body">
+                <p>Businesses can anchor financial documents without uploading the content.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Invoices</li>
+                    <li>Purchase orders</li>
+                    <li>Delivery notes</li>
+                    <li>Payment confirmations</li>
+                    <li>Audit files</li>
+                    <li>Accounting exports</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>A business record existed at time T.</li>
+                    <li>The record was not edited after the fact.</li>
+                    <li>
+                      A later corrected version can be linked while preserving the old version.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Engineering, CAD, and design files</summary>
+              <div class="usecase-body">
+                <p>Engineering teams can prove versions of technical files.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>CAD files</li>
+                    <li>PCB designs</li>
+                    <li>3D models</li>
+                    <li>Architecture drawings</li>
+                    <li>Manufacturing specs</li>
+                    <li>Product designs</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>This exact design existed at time T.</li>
+                    <li>The current approved design can be identified.</li>
+                    <li>Old versions remain traceable.</li>
+                    <li>
+                      Any file hash can be searched backward to find the related project/version.
+                    </li>
+                  </ul>
+                </div>
+                <p class="hint">
+                  This is where backward hash search shines — search any SHA-256 to find the related
+                  project, version, and path.
+                </p>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Creative work and copyright evidence</summary>
+              <div class="usecase-body">
+                <p>Creators can anchor drafts and final versions before publishing.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Music files</li>
+                    <li>Lyrics</li>
+                    <li>Manuscripts</li>
+                    <li>Artwork</li>
+                    <li>Videos</li>
+                    <li>Photography</li>
+                    <li>Game assets</li>
+                    <li>UI/UX designs</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>The creator had this exact work at time T.</li>
+                    <li>Earlier drafts and later final versions can be linked.</li>
+                    <li>Public publication can happen after anchoring.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Research, academic papers, and datasets</summary>
+              <div class="usecase-body">
+                <p>Researchers can anchor papers, datasets, source code, and experiment outputs.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Preprints</li>
+                    <li>Datasets</li>
+                    <li>Lab reports</li>
+                    <li>Research notebooks</li>
+                    <li>Statistical models</li>
+                    <li>Reproducibility packages</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>The research material existed at time T.</li>
+                    <li>Dataset integrity can be verified later.</li>
+                    <li>Updated datasets can be versioned clearly.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>AI models, prompts, and datasets</summary>
+              <div class="usecase-body">
+                <p>
+                  AI teams can anchor model artifacts, training datasets, prompts, and evaluation
+                  results.
+                </p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Model weights</li>
+                    <li>Fine-tuning datasets</li>
+                    <li>Prompt libraries</li>
+                    <li>Benchmark results</li>
+                    <li>Evaluation reports</li>
+                    <li>Safety test logs</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>This model/dataset/prompt existed at time T.</li>
+                    <li>The current approved version is identifiable.</li>
+                    <li>Old versions remain auditable.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Supply-chain documentation</summary>
+              <div class="usecase-body">
+                <p>A supplier can anchor certificates and batch documents.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Certificates of origin</li>
+                    <li>Quality-control reports</li>
+                    <li>Batch test results</li>
+                    <li>Inspection files</li>
+                    <li>Compliance declarations</li>
+                    <li>Shipping documents</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>The certificate existed before shipment or delivery.</li>
+                    <li>The document was not modified.</li>
+                    <li>Updated or revoked certificates can be tracked.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Public tenders and procurement</summary>
+              <div class="usecase-body">
+                <p>Organizations can anchor bids, tender documents, and submissions.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Government tenders</li>
+                    <li>Supplier proposals</li>
+                    <li>Bid submissions</li>
+                    <li>Evaluation documents</li>
+                    <li>Procurement audit trails</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>A bid existed before the deadline.</li>
+                    <li>The submitted document was not altered later.</li>
+                    <li>Revised versions are visible as successors.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Bug reports and vulnerability disclosure</summary>
+              <div class="usecase-body">
+                <p>
+                  Security researchers can privately anchor a vulnerability report before
+                  disclosure.
+                </p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Bug bounty reports</li>
+                    <li>Responsible disclosure</li>
+                    <li>Exploit writeups</li>
+                    <li>Security audit findings</li>
+                    <li>Patch evidence</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>The researcher knew the vulnerability at time T.</li>
+                    <li>The report content can later be verified.</li>
+                    <li>Updated reports can be versioned.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Journalism and public statements</summary>
+              <div class="usecase-body">
+                <p>Journalists, bloggers, and organizations can anchor published material.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Articles</li>
+                    <li>Press releases</li>
+                    <li>Public statements</li>
+                    <li>Investigative evidence bundles</li>
+                    <li>Media archives</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>This version of the article existed at time T.</li>
+                    <li>Later edits are separate versions.</li>
+                    <li>Readers can verify whether they're seeing the current version.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Policies, procedures, and compliance documents</summary>
+              <div class="usecase-body">
+                <p>Companies can anchor internal policies and SOPs.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>HR policies</li>
+                    <li>Safety procedures</li>
+                    <li>Compliance manuals</li>
+                    <li>ISO documents</li>
+                    <li>Internal guidelines</li>
+                    <li>Training materials</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>This policy version existed at time T.</li>
+                    <li>Employees or auditors can check whether it's still current.</li>
+                    <li>Old versions remain traceable.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Education and certificates</summary>
+              <div class="usecase-body">
+                <p>
+                  Schools, trainers, and online course platforms can anchor certificates and course
+                  files.
+                </p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Diplomas</li>
+                    <li>Certificates</li>
+                    <li>Course materials</li>
+                    <li>Student submissions</li>
+                    <li>Exam files</li>
+                    <li>Assignment evidence</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>A certificate or submission existed at time T.</li>
+                    <li>The document has not changed.</li>
+                    <li>Updated or revoked versions can be shown.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Insurance and claims</summary>
+              <div class="usecase-body">
+                <p>A claimant can anchor photos, documents, and reports.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>Accident photos</li>
+                    <li>Damage reports</li>
+                    <li>Claim documents</li>
+                    <li>Repair estimates</li>
+                    <li>Medical reports</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>Evidence existed at time T.</li>
+                    <li>Files were not modified after anchoring.</li>
+                    <li>Additional evidence can be added as new versions.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>Product documentation and manuals</summary>
+              <div class="usecase-body">
+                <p>Manufacturers can anchor manuals and technical documentation.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>User manuals</li>
+                    <li>Safety sheets</li>
+                    <li>Release notes</li>
+                    <li>Firmware documentation</li>
+                    <li>Product specifications</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>This manual/spec existed at time T.</li>
+                    <li>The latest live version is easy to identify.</li>
+                    <li>Old versions remain historically verifiable.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>DAO and Web3 governance</summary>
+              <div class="usecase-body">
+                <p>Projects can anchor governance proposals, snapshots, and community documents.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>DAO proposals</li>
+                    <li>Treasury reports</li>
+                    <li>Voting documents</li>
+                    <li>Protocol specs</li>
+                    <li>Tokenomics documents</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>The proposal existed before voting.</li>
+                    <li>The content was not changed after community review.</li>
+                    <li>New proposal versions are linked transparently.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="usecase">
+              <summary>API specifications and technical standards</summary>
+              <div class="usecase-body">
+                <p>Teams can anchor OpenAPI specs, schemas, and protocol documents.</p>
+                <div class="usecase-sub">
+                  <p class="panel-label">Useful for</p>
+                  <ul>
+                    <li>API contracts</li>
+                    <li>Database schemas</li>
+                    <li>Protocol specs</li>
+                    <li>Configuration files</li>
+                    <li>Interface definitions</li>
+                  </ul>
+                </div>
+                <div class="usecase-sub">
+                  <p class="panel-label">Proof provided</p>
+                  <ul>
+                    <li>The technical contract existed at time T.</li>
+                    <li>The current live version is known.</li>
+                    <li>Breaking changes become visible through version history.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ YOUR PROJECTS (phase 5) ============ -->
+      <section id="myProjects" class="workmask" hidden>
+        <div class="mask-head">
+          <h2>Your projects</h2>
           <p class="gate-note">
-            Non-custodial by design: the API only <em>prepares</em> the transaction — you sign it
-            locally (the <code>vericell</code> CLI or any CCC signer), so your key never leaves your
-            machine. Full reference, every endpoint and a try-it-out console:
-            <a id="apiDocsLink" href="#" target="_blank" rel="noopener">interactive API docs</a>.
+            Every project anchored by your connected wallet, live and consumed.
           </p>
+        </div>
+        <div class="panel">
+          <div id="myProjectsResults" class="results"></div>
         </div>
       </section>
     </main>

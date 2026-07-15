@@ -33,6 +33,20 @@
                 }
         }
 
+	# The dedicated /verify page (phase 3): a verification-only page with
+	# deep-linkable /status/... routes (unid/lock/hash), built as its own
+	# Vite entry (verify.html) sharing style.css/topbar/footer with
+	# index.html, same as the legal pages below. All four path forms
+	# resolve to the same file; verify.js parses location.pathname
+	# client-side to pick the route. Named matcher, since an inline
+	# `handle <matcher>` only accepts a single path token.
+	@verifyPage path /verify /verify/* /status /status/*
+	handle @verifyPage {
+		root * /srv/web
+		try_files {path} /verify.html
+		file_server
+	}
+
 	handle {
 		root * /srv/web
 		# The legal pages (impressum.html, datenschutz.html,

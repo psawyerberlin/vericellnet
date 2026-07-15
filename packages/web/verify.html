@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="/theme-init.js"></script>
+    <title>Verify a proof — VeriCell</title>
+    <meta
+      name="description"
+      content="Verify any VeriCell proof — a SHA-256 file hash, a CKB address, or a transaction/project ID. No account, no wallet needed."
+    />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <rect
+            x="2"
+            y="2"
+            width="20"
+            height="20"
+            rx="3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          />
+          <rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" />
+        </svg>
+        VeriCell
+      </a>
+      <nav class="topnav">
+        <button
+          id="navToggle"
+          type="button"
+          class="nav-toggle"
+          aria-expanded="false"
+          aria-controls="navLinks"
+          aria-label="Open menu"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M3 6h18M3 12h18M3 18h18"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+        <div id="navLinks" class="nav-links">
+          <a href="/#create">Create proof</a>
+          <a href="/verify">Verify</a>
+          <a href="/#how">How it works</a>
+          <a id="apiNavLink" href="#" target="_blank" rel="noopener">API</a>
+        </div>
+        <div class="net-switch">
+          <button
+            id="networkBadge"
+            type="button"
+            class="net-badge"
+            aria-haspopup="true"
+            aria-expanded="false"
+          ></button>
+          <div id="netConfirm" class="net-confirm" hidden role="dialog" aria-label="Switch network">
+            <p id="netConfirmText"></p>
+            <div class="net-confirm-actions">
+              <button id="netConfirmYes" type="button" class="btn btn-small btn-primary"></button>
+              <button id="netConfirmNo" type="button" class="btn btn-small btn-ghost">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+        <button
+          id="themeToggle"
+          type="button"
+          class="theme-toggle"
+          aria-label="Switch to dark theme"
+          aria-pressed="false"
+          title="Switch to dark theme"
+        >
+          <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2" />
+            <path
+              d="M12 2.5v2.5M12 19v2.5M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2.5 12H5M19 12h2.5M4.2 19.8l1.8-1.8M18 6l1.8-1.8"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" fill="currentColor" />
+          </svg>
+        </button>
+      </nav>
+    </header>
+
+    <main id="top">
+      <!-- ============ VERIFY / SEARCH ============ -->
+      <section class="workmask">
+        <div class="mask-head">
+          <div>
+            <p class="eyebrow">Proof of Existence, Integrity, Ownership and Time</p>
+            <h2>Verify a proof</h2>
+            <p class="gate-note">
+              Check any VeriCell proof — no account, no wallet needed. Anyone can verify.
+            </p>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="search-row">
+            <input
+              id="searchInput"
+              type="text"
+              placeholder="SHA-256 hash, CKB address, or transaction/project ID…"
+            />
+            <button class="btn btn-primary" id="searchBtn">Verify</button>
+          </div>
+          <div id="verifyDrop" class="dropzone slim">
+            <p>…or drop a file to hash and verify it</p>
+          </div>
+          <div id="searchResults" class="results"></div>
+        </div>
+      </section>
+
+      <!-- ============ PROJECT DETAIL ============ -->
+      <section id="detail" class="workmask" hidden>
+        <div class="mask-head"><h2>Project proof</h2></div>
+        <div class="panel" id="detailPanel"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>
+        VeriCell — proof of authorship, integrity and time on
+        <a href="https://www.nervos.org" target="_blank" rel="noopener">Nervos CKB</a>. Built with
+        <a href="https://github.com/ckb-devrel/ccc" target="_blank" rel="noopener">CCC</a>.
+      </p>
+      <p class="fine">Fingerprints only. Your files stay yours.</p>
+      <nav class="legal-links">
+        <a href="/impressum.html">Impressum</a>
+        <a href="/datenschutz.html">Datenschutzerklärung</a>
+        <a href="/haftungsausschluss.html">Haftungsausschluss</a>
+      </nav>
+    </footer>
+
+    <script type="module" src="/src/verify.js"></script>
+  </body>
+</html>

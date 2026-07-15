@@ -144,6 +144,18 @@ cross-check its output.
 
 ## 6. Build and start
 
+Validate `packages/web/Caddyfile` before building — a syntax error there
+doesn't fail the build, it crash-loops the `caddy` container after `up -d`,
+which is a much slower way to find out:
+
+```bash
+docker run --rm -v $(pwd)/packages/web/Caddyfile:/etc/caddy/Caddyfile:ro \
+  -e CADDY_DOMAIN=:80 -e STATS_TOKEN=x caddy:2-alpine \
+  caddy validate --config /etc/caddy/Caddyfile
+```
+
+Must print `Valid configuration`. Then:
+
 ```bash
 docker compose up -d --build
 docker compose ps

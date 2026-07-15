@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@ckb-ccc/ccc": "^1.2.3",
-    "core": "workspace:*"
+    "core": "workspace:*",
+    "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "vite": "^6.0.0"

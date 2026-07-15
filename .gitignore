@@ -18,3 +18,4 @@ packages/web/haftungsausschluss.html
 packages/web/impressum.html
 mainnet-services.env
 stats-export/stats.json
+*:Zone.Identifier

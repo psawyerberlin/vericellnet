@@ -16,123 +16,38 @@ import {
   merkleRoot as coreMerkleRoot,
   encodeManifest,
   estimateCellCost,
-  NETWORK,
-  explorerUrlForNetwork,
   computeFee,
   getFeeAddress,
   costBreakdown,
   FEE_EXPLAINER_TEXT,
 } from "core";
-
-/* ================================================================== */
-/* API client — global index, with localStorage as offline fallback   */
-/*                                                                     */
-/* The network is runtime state (phase 10b) — every API call is       */
-/* scoped under /api/v1/{network}/... (see packages/api build.ts's    */
-/* per-network mounts), re-derived from `state.network` on each call  */
-/* so a network switch takes effect immediately, no page reload.      */
-/* ================================================================== */
-const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
-
-function apiUrlBase() {
-  return `${API_BASE}/api/v1/${state.network}`;
-}
-
-async function apiFetch(path) {
-  if (!API_BASE) throw new Error("no API configured (VITE_API_URL unset)");
-  const res = await fetch(`${apiUrlBase()}${path}`);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`API ${res.status} on ${path}`);
-  return res.json();
-}
-
-function apiSearchProjects(params) {
-  const qs = new URLSearchParams(params).toString();
-  return apiFetch(`/projects?${qs}`);
-}
-function apiGetProject(unid) {
-  return apiFetch(`/projects/${encodeURIComponent(unid)}`);
-}
-function apiGetVersion(txHash) {
-  return apiFetch(`/versions/${txHash}`);
-}
-
-function looksLikeHex64(q) {
-  return /^(0x)?[a-fA-F0-9]{64}$/.test(q);
-}
-function looksLikeAddress(q) {
-  return /^ck[bt]1[0-9a-z]+$/i.test(q);
-}
-
-/** project list row (GET /projects, /projects/{unid}) -> a render-friendly search hit. */
-function projectRowToHit(p) {
-  return {
-    provenance: "index",
-    unid: p.unid,
-    txHash: p.live_tx_hash,
-    index: p.live_index ?? 0,
-    title: p.title,
-    source: p.source_url,
-    created: p.created_at,
-    active: p.active,
-    address: p.ckb_address,
-    project_sha256: null,
-    merkle_root: null,
-    hashes: [],
-    files: null,
-    count: null,
-  };
-}
-
-/** GET /versions/{txHash} -> a search hit, for direct tx-hash lookups. */
-function versionToHit(v) {
-  return {
-    provenance: "index",
-    unid: v.unid,
-    txHash: v.tx_hash,
-    index: 0,
-    title: v.manifest?.title ?? "(untitled)",
-    source: v.manifest?.source ?? null,
-    created: v.manifest?.created ?? null,
-    active: v.live === true,
-    address: v.owner_address,
-    project_sha256: v.project_sha256,
-    merkle_root: v.merkle_root,
-    hashes: (v.manifest?.files ?? []).map((f) => f.h),
-    files: v.manifest?.files ?? null,
-    count: v.manifest?.count ?? (v.manifest?.files ?? []).length,
-  };
-}
-
-/** Query the global index for a search string. Never throws — signals `apiDown` instead. */
-async function apiSearch(q) {
-  try {
-    if (looksLikeHex64(q)) {
-      const hex = q.replace(/^0x/, "").toLowerCase();
-      const byHash = await apiSearchProjects({ hash: hex, limit: 20 });
-      if (byHash?.data?.length) return { hits: byHash.data.map(projectRowToHit), apiDown: false };
-
-      const txHash = q.startsWith("0x") ? q : `0x${q}`;
-      const version = await apiGetVersion(txHash);
-      return { hits: version ? [versionToHit(version)] : [], apiDown: false };
-    }
-    if (looksLikeAddress(q)) {
-      const byAddr = await apiSearchProjects({ address: q, limit: 20 });
-      return { hits: (byAddr?.data ?? []).map(projectRowToHit), apiDown: false };
-    }
-    const byTitle = await apiSearchProjects({ q, limit: 20 });
-    return { hits: (byTitle?.data ?? []).map(projectRowToHit), apiDown: false };
-  } catch (e) {
-    console.warn("global index unavailable, showing local results only", e);
-    return { hits: [], apiDown: true };
-  }
-}
-
-/** API hits take priority; a local hit already represented by an API hit (same tx) is dropped. */
-function mergeHits(apiHits, localHits) {
-  const seen = new Set(apiHits.map((h) => h.txHash).filter(Boolean));
-  return [...apiHits, ...localHits.filter((h) => !h.txHash || !seen.has(h.txHash))];
-}
+import {
+  resolveInitialNetwork,
+  makeChainClient,
+  NETWORK_STORAGE_KEY,
+  explorerTxUrl,
+  renderNetworkBadge,
+  wireNetworkSwitch,
+  wireApiNavLink,
+  wireDropzone,
+  fpStrip,
+  loadRegistry,
+  saveRegistry,
+  addToRegistry,
+  runSearch as sharedRunSearch,
+  showProjectDetail,
+  renderResults,
+  fetchOwnerProjects,
+} from "./search.js";
+import {
+  downloadCertificate,
+  downloadCertificatePdf,
+  downloadManifestJson,
+  versionCertActionsHtml,
+  wireVersionCertActions,
+} from "./certificate.js";
+import "./theme.js";
+import "./nav.js";
 
 /* ================================================================== */
 /* State                                                              */
@@ -144,29 +59,10 @@ function mergeHits(apiHits, localHits) {
 /* override is persisted in localStorage so it survives reloads.      */
 /* Only testnet/mainnet are reachable from the badge; a devnet build  */
 /* (local offckb testing) is unaffected — see wireNetworkSwitch().    */
+/* Network resolution, the chain client, and search/detail rendering  */
+/* are shared with verify.js via ./search.js (phase 3) — no diverging */
+/* copies of that machinery between the two pages.                    */
 /* ================================================================== */
-const NETWORK_STORAGE_KEY = "vericell:network";
-
-function resolveInitialNetwork() {
-  try {
-    const stored = localStorage.getItem(NETWORK_STORAGE_KEY);
-    if (stored === "testnet" || stored === "mainnet") return stored;
-  } catch {
-    /* localStorage unavailable (private mode, etc.) — fall back to the build default */
-  }
-  return NETWORK;
-}
-
-function makeChainClient(network) {
-  if (network === "mainnet") return new ccc.ClientPublicMainnet();
-  if (network === "devnet") {
-    return new ccc.ClientPublicTestnet({
-      url: import.meta.env.VITE_DEVNET_RPC_URL || "http://127.0.0.1:28114",
-    });
-  }
-  return new ccc.ClientPublicTestnet();
-}
-
 const state = {
   network: resolveInitialNetwork(),
   client: null, // set below, once state.network is known
@@ -175,6 +71,7 @@ const state = {
   entries: [], // [{ p: path, h: sha256hex, bytes }]
   pendingPrev: null, // set while the create panel is in "publish new version" mode
   lastCostEstimate: null, // { full, compact } CKB, cached from renderManifest() for the submit-time cost gate
+  lastAnchorCert: null, // certificate.js params for the anchor shown in #anchorSuccess (phase 4)
 };
 state.client = makeChainClient(state.network);
 
@@ -196,30 +93,6 @@ async function merkleRoot(entries) {
 }
 
 /* ================================================================== */
-/* Local registry (browser index of created proofs).                  */
-/* Offline/no-API fallback and instant "this device" results — the     */
-/* API's index is authoritative when reachable.                       */
-/* ================================================================== */
-function regKey() {
-  return `vericell:${state.network}`;
-}
-function loadRegistry() {
-  try {
-    return JSON.parse(localStorage.getItem(regKey()) || "[]");
-  } catch {
-    return [];
-  }
-}
-function saveRegistry(list) {
-  localStorage.setItem(regKey(), JSON.stringify(list));
-}
-function addToRegistry(rec) {
-  const list = loadRegistry();
-  list.unshift(rec);
-  saveRegistry(list);
-}
-
-/* ================================================================== */
 /* Wallet (JoyID via CCC — other CCC signers plug in the same way)    */
 /* ================================================================== */
 async function connectWallet() {
@@ -234,6 +107,7 @@ async function connectWallet() {
     btn.title = state.address;
     document.getElementById("createPanel").classList.remove("is-locked");
     document.getElementById("createGate").textContent = "Wallet connected — you can anchor proofs.";
+    showMyProjects();
   } catch (e) {
     btn.textContent = "Connect wallet";
     setStatus("submitStatus", `Wallet connection failed: ${e.message || e}`, true);
@@ -372,7 +246,7 @@ async function anchorProof({ compact, prevOutPoint, genesis, prevTxHash }) {
   await tx.completeFeeBy(state.signer, 1000);
   const txHash = await state.signer.sendTransaction(tx);
 
-  addToRegistry({
+  addToRegistry(state.network, {
     unid: txHash, // v1: creation tx hash. Production: type ID (TECHNICAL.md)
     txHash,
     index: 0,
@@ -392,64 +266,10 @@ async function anchorProof({ compact, prevOutPoint, genesis, prevTxHash }) {
 }
 
 /* ================================================================== */
-/* Search & on-chain verification                                     */
-/* ================================================================== */
-function searchRegistry(q) {
-  q = q.trim().toLowerCase();
-  if (!q) return [];
-  return loadRegistry().filter(
-    (r) =>
-      r.title.toLowerCase().includes(q) ||
-      r.txHash.toLowerCase().includes(q.replace(/^0x/, "")) ||
-      (r.address && r.address.toLowerCase() === q) ||
-      r.project_sha256 === q ||
-      (r.merkle_root && r.merkle_root === q) ||
-      r.hashes.includes(q),
-  );
-}
-
-/** Fetch a proof cell from chain: live status, data, block time. */
-async function fetchProofFromChain(txHash, index = 0) {
-  const out = { live: null, manifest: null, blockTime: null, lockOwner: null };
-  try {
-    const res = await state.client.getTransaction(txHash);
-    if (!res) return out;
-    const txOut = res.transaction?.outputs?.[index];
-    const rawData = res.transaction?.outputsData?.[index];
-    if (rawData) {
-      try {
-        out.manifest = JSON.parse(new TextDecoder().decode(ccc.bytesFrom(rawData)));
-      } catch {
-        /* not a VeriCell manifest */
-      }
-    }
-    if (txOut?.lock) {
-      out.lockOwner = ccc.Address.fromScript(txOut.lock, state.client).toString();
-    }
-    if (res.blockHash) {
-      try {
-        const header = await state.client.getHeaderByHash(res.blockHash);
-        if (header?.timestamp) out.blockTime = new Date(Number(header.timestamp));
-      } catch {
-        /* header lookup optional */
-      }
-    }
-    try {
-      const cell = await state.client.getCellLive({ txHash, index: ccc.numFrom(index) }, false);
-      out.live = !!cell;
-    } catch {
-      out.live = false;
-    }
-  } catch (e) {
-    console.warn("chain lookup failed", e);
-  }
-  return out;
-}
-
-/* ================================================================== */
 /* Input sources                                                      */
 /* ================================================================== */
 async function addFiles(fileList) {
+  hideAnchorSuccess();
   const files = [...fileList];
   setStatus("submitStatus", `Hashing ${files.length} file(s)…`);
   for (const f of files) {
@@ -462,6 +282,7 @@ async function addFiles(fileList) {
 }
 
 async function addGithubRepo(spec) {
+  hideAnchorSuccess();
   let [repo, branch] = spec
     .trim()
     .replace(/^https:\/\/github\.com\//, "")
@@ -491,6 +312,7 @@ async function addGithubRepo(spec) {
 }
 
 async function addUrl(url) {
+  hideAnchorSuccess();
   const res = await fetch(url);
   if (!res.ok)
     throw new Error(
@@ -503,6 +325,7 @@ async function addUrl(url) {
 }
 
 function addPastedHashes(text) {
+  hideAnchorSuccess();
   for (const line of text.split("\n")) {
     const m =
       line.trim().match(/^(.*?)[\s,;]+([a-fA-F0-9]{64})$/) ||
@@ -531,75 +354,9 @@ function setStatus(id, msg, err = false) {
   el.classList.toggle("err", err);
 }
 
-/** Signature element: SHA-256 rendered as 16 colored bars. */
-function fpStrip(hex, el) {
-  if (!hex || !el) return;
-  el.innerHTML = "";
-  for (let i = 0; i < 32; i += 2) {
-    const span = document.createElement("span");
-    const hue = parseInt(hex.substr(i * 2, 3), 16) % 360;
-    const light = 35 + (parseInt(hex.substr(i * 2 + 3, 1), 16) % 30);
-    span.style.background = `hsl(${hue} 55% ${light}%)`;
-    el.appendChild(span);
-  }
-}
-
-function renderNetworkBadge() {
-  const el = document.getElementById("networkBadge");
-  if (!el) return;
-  el.textContent = state.network.toUpperCase();
-  el.className = "net-badge"; // reset the previous network's modifier class
-  el.classList.add(`net-badge--${state.network}`);
-  el.title =
-    state.network === "mainnet"
-      ? "Mainnet — anchoring costs real CKB. Click to switch."
-      : `${state.network} — for testing only. Click to switch.`;
-}
-
-/** curl examples in the "API & automation" section, filled in with the actual API base and network. */
-function renderApiSection() {
-  const base = API_BASE || "https://api.vericell.example";
-  const v1 = `${base}/api/v1/${state.network}`;
-  const prepareEl = document.getElementById("curlPrepare");
-  const submitEl = document.getElementById("curlSubmit");
-  const verifyEl = document.getElementById("curlVerify");
-  if (prepareEl) {
-    prepareEl.textContent =
-      `# 1. Prepare an unsigned anchoring transaction (non-custodial — you sign it, not the API)\n` +
-      `curl -s -X POST ${v1}/proofs/prepare \\\n` +
-      `  -H "Authorization: Bearer $VERICELL_API_KEY" \\\n` +
-      `  -H "Content-Type: application/json" \\\n` +
-      `  -d '{"manifest":{"title":"my-project","files":[{"p":"README.md","h":"<sha256>"}]},"payer":{"lock":{...}}}'`;
-  }
-  if (submitEl) {
-    submitEl.textContent =
-      `# 2. Sign the returned tx locally (vericell CLI or any CCC signer), then submit it\n` +
-      `curl -s -X POST ${v1}/proofs/submit \\\n` +
-      `  -H "Authorization: Bearer $VERICELL_API_KEY" \\\n` +
-      `  -H "Content-Type: application/json" \\\n` +
-      `  -d '{"tx": <signed-tx-json>}'`;
-  }
-  if (verifyEl) {
-    verifyEl.textContent =
-      `# Verify a file's hash — no API key needed, nothing is uploaded\n` +
-      `sha256sum myfile.zip\n` +
-      `curl -s ${v1}/verify/<sha256>`;
-  }
-  const docsLink = document.getElementById("apiDocsLink");
-  if (docsLink) {
-    // /api/v1/docs itself isn't network-scoped (one Swagger UI covers every mounted network).
-    docsLink.href = `${base}/api/v1/docs`;
-    if (!API_BASE) docsLink.textContent = "interactive API docs (set VITE_API_URL to enable)";
-  }
-}
-
 /* ================================================================== */
 /* Runtime network toggle (phase 10b)                                 */
 /* ================================================================== */
-function explorerTxUrl(txHash) {
-  return `${explorerUrlForNetwork(state.network)}/transaction/${txHash}`;
-}
-
 /** Atomically move every network-scoped piece of state to `target` and re-query open views. */
 async function switchNetwork(target) {
   state.network = target;
@@ -615,6 +372,7 @@ async function switchNetwork(target) {
   state.signer = null;
   state.address = null;
   exitVersionMode();
+  hideMyProjects();
   const connectBtn = document.getElementById("connectBtn");
   connectBtn.textContent = "Connect wallet";
   connectBtn.classList.remove("is-connected");
@@ -623,8 +381,7 @@ async function switchNetwork(target) {
   document.getElementById("createGate").textContent =
     `Switched to ${target.toUpperCase()} — reconnect your wallet to create proofs.`;
 
-  renderNetworkBadge();
-  renderApiSection();
+  renderNetworkBadge(target);
 
   // The open detail view (if any) belongs to whichever network it was opened
   // from; there's no cross-network mapping for a single tx/unid, so close it
@@ -635,45 +392,6 @@ async function switchNetwork(target) {
   const q = document.getElementById("searchInput").value.trim();
   if (q) await runSearch(q);
   else document.getElementById("searchResults").innerHTML = "";
-}
-
-function wireNetworkSwitch() {
-  const badge = document.getElementById("networkBadge");
-  const box = document.getElementById("netConfirm");
-  const text = document.getElementById("netConfirmText");
-  const yes = document.getElementById("netConfirmYes");
-  const no = document.getElementById("netConfirmNo");
-
-  function closePopover() {
-    box.hidden = true;
-    badge.setAttribute("aria-expanded", "false");
-    document.removeEventListener("click", onOutsideClick);
-  }
-  function onOutsideClick(e) {
-    if (!box.contains(e.target) && e.target !== badge) closePopover();
-  }
-
-  badge.onclick = (e) => {
-    e.stopPropagation();
-    if (!box.hidden) {
-      closePopover();
-      return;
-    }
-    const target = state.network === "mainnet" ? "testnet" : "mainnet";
-    text.textContent =
-      target === "mainnet"
-        ? "Switch to Mainnet — anchoring uses real CKB."
-        : "Switch to Testnet — for testing only, uses test CKB with no real value.";
-    yes.textContent = `Switch to ${target === "mainnet" ? "Mainnet" : "Testnet"}`;
-    yes.onclick = () => {
-      closePopover();
-      switchNetwork(target);
-    };
-    no.onclick = closePopover;
-    box.hidden = false;
-    badge.setAttribute("aria-expanded", "true");
-    document.addEventListener("click", onOutsideClick);
-  };
 }
 
 async function renderManifest() {
@@ -729,95 +447,89 @@ function currentCostBreakdown(compact) {
   return costBreakdown(BigInt(capacityCkb) * 100_000_000n, state.network);
 }
 
-function renderResults(records, apiDown = false, matchedHash = null) {
-  const box = document.getElementById("searchResults");
-  box.innerHTML = "";
-  if (apiDown) {
-    const note = document.createElement("p");
-    note.className = "gate-note";
-    note.textContent =
-      "Global index unavailable right now — showing results from this device only.";
-    box.appendChild(note);
-  }
-  if (!records.length) {
-    const p = document.createElement("p");
-    p.className = "gate-note";
-    p.textContent = "No matches. Paste a transaction hash to look a proof up directly on-chain.";
-    box.appendChild(p);
-    return;
-  }
-  for (const r of records) {
-    const a = document.createElement("a");
-    a.className = "result-card";
-    a.href = `#detail`;
-    a.innerHTML = `
-      <span class="rc-title"></span>
-      <span class="badge provenance ${r.provenance === "index" ? "idx" : "dev"}">${
-        r.provenance === "index" ? "global index" : "this device"
-      }</span>
-      ${
-        r.provenance === "index"
-          ? `<span class="badge status ${r.active ? "live" : "dead"}">${r.active ? "LIVE" : "consumed"}</span>`
-          : '<span class="badge status live">checking…</span>'
-      }
-      ${matchedHash ? '<span class="badge match">hash match</span>' : ""}
-      <div class="fp-strip small"></div>
-      <div class="rc-meta"></div>`;
-    a.querySelector(".rc-title").textContent = r.title || "(untitled)";
-    a.querySelector(".rc-meta").textContent =
-      `${r.count ?? "?"} entries · ${r.created ? new Date(r.created).toLocaleString() : "—"} · tx ${
-        r.txHash ? r.txHash.slice(0, 14) + "…" : "—"
-      }`;
-    fpStrip(r.project_sha256, a.querySelector(".fp-strip"));
-    a.onclick = () => showDetail(r);
-    box.appendChild(a);
-
-    if (r.provenance === "index" && !r.project_sha256 && r.unid) {
-      // list rows don't carry a hash — fill the fingerprint strip in lazily.
-      apiGetProject(r.unid)
-        .then((detail) =>
-          fpStrip(detail?.live_version?.project_sha256, a.querySelector(".fp-strip")),
-        )
-        .catch(() => {});
-    }
-    if (r.provenance === "device" && r.txHash) {
-      fetchProofFromChain(r.txHash, r.index).then(({ live }) => {
-        const badgeEl = a.querySelector(".badge.status");
-        if (!badgeEl) return;
-        if (live === true) badgeEl.textContent = "LIVE";
-        else if (live === false) {
-          badgeEl.textContent = "consumed";
-          badgeEl.className = "badge status dead";
-        } else badgeEl.textContent = "unknown";
-      });
-    }
-  }
+/** Thin wrapper around the shared search: this page's results link into its
+ *  own detail view (owner actions), not the read-only one on /verify. */
+function runSearch(q, opts = {}) {
+  return sharedRunSearch(state.network, state.client, q, {
+    onSelect: showDetail,
+    showCanonicalLink: false,
+    ...opts,
+  });
 }
 
-async function runSearch(q, { matchedHash = null } = {}) {
-  const localHits = searchRegistry(q).map((r) => ({ ...r, provenance: "device" }));
-  const { hits: apiHits, apiDown } = q ? await apiSearch(q) : { hits: [], apiDown: false };
-  renderResults(mergeHits(apiHits, localHits), apiDown, matchedHash);
+/** Project detail, with this page's owner-only actions (publish new version / withdraw)
+ *  layered on top of the shared read-only rendering — see buildOwnerActionsHtml below. */
+function showDetail(rec) {
+  return showProjectDetail({
+    rec,
+    network: state.network,
+    client: state.client,
+    buildActionsHtml: buildOwnerActionsHtml,
+    wireActions: wireOwnerActions,
+    buildVersionActionsHtml: versionCertActionsHtml,
+    wireVersionActions: wireVersionCertActions,
+  });
 }
 
-/** Project detail: the global index (version timeline, live/consumed from the API) when
- *  reachable; a direct on-chain lookup of just this one version otherwise. */
-async function showDetail(rec) {
-  const sec = document.getElementById("detail");
-  const panel = document.getElementById("detailPanel");
-  sec.hidden = false;
-  panel.innerHTML = `<p class="gate-note">Loading proof…</p>`;
-  sec.scrollIntoView({ behavior: "smooth" });
+/** `ctx` is `{ active, txHash, index, title, sourceUrl, versionNo, ownerAddress, unid }`,
+ *  assembled by the shared detail renderer (search.js) from either the API or a chain-only
+ *  fallback — only shown/wired when this device's wallet may own the project. */
+function buildOwnerActionsHtml(ctx) {
+  if (!ctx.active) return "";
+  return `<button class="btn btn-ghost btn-small" id="newVersionBtn">Publish new version (consume this cell)</button>${withdrawSectionHtml()}`;
+}
 
-  let detail = null;
-  try {
-    detail = rec.unid ? await apiGetProject(rec.unid) : null;
-  } catch (e) {
-    console.warn("project detail via the global index failed; falling back to chain-only view", e);
-  }
+function wireOwnerActions(panel, ctx) {
+  if (!ctx.active) return;
+  wireNewVersionButton(panel, {
+    txHash: ctx.txHash,
+    index: ctx.index,
+    genesis: ctx.unid,
+    title: ctx.title,
+    sourceUrl: ctx.sourceUrl,
+    versionNo: ctx.versionNo,
+    ownerAddress: ctx.ownerAddress,
+  });
+  wireWithdrawButton(panel, {
+    txHash: ctx.txHash,
+    index: ctx.index,
+    title: ctx.title,
+    ownerAddress: ctx.ownerAddress,
+  });
+}
 
-  if (detail) await renderDetailFromApi(detail, rec);
-  else await renderDetailFromChain(rec);
+/* ================================================================== */
+/* Connected wallet's "Your projects" list (phase 5)                  */
+/* ================================================================== */
+/** Re-fetches and re-renders the connected wallet's project list, reusing the same
+ *  row rendering as global search (renderResults) with its own target container and
+ *  empty-state copy. No-ops if no wallet is connected — callers that only fire once a
+ *  wallet action succeeded don't need to guard this themselves. */
+async function refreshMyProjects() {
+  if (!state.address) return;
+  const { hits, apiDown } = await fetchOwnerProjects(state.network, state.address);
+  renderResults(hits, {
+    targetId: "myProjectsResults",
+    apiDown,
+    network: state.network,
+    client: state.client,
+    onSelect: showDetail,
+    showCanonicalLink: true,
+    emptyMessage: "No projects yet — anchor your first one above.",
+  });
+}
+
+function showMyProjects() {
+  document.getElementById("myProjects").hidden = false;
+  refreshMyProjects();
+}
+
+/** Hides the wallet-scoped "Your projects" section — only called when the connected
+ *  wallet itself goes away (network switch forces reconnect), never by the form-scoped
+ *  "Start over" reset (phase 2c), which must leave this section alone. */
+function hideMyProjects() {
+  document.getElementById("myProjects").hidden = true;
+  document.getElementById("myProjectsResults").innerHTML = "";
 }
 
 /* ================================================================== */
@@ -834,12 +546,16 @@ function updateCreatePanelMode() {
   const cancelBtn = document.getElementById("cancelVersionBtn");
   const banner = document.getElementById("versionBanner");
   const submitBtn = document.getElementById("submitBtn");
+  const hint = document.getElementById("submitHint");
 
   if (!prev) {
     heading.textContent = "Create a project proof";
     cancelBtn.hidden = true;
     banner.hidden = true;
-    submitBtn.textContent = "Anchor proof on CKB";
+    submitBtn.textContent = "Create new project";
+    submitBtn.classList.remove("btn-version");
+    hint.hidden = true;
+    hint.textContent = "";
     return;
   }
 
@@ -855,6 +571,10 @@ function updateCreatePanelMode() {
     permanently verifiable as <strong>superseded</strong>. Locked CKB from the old cell
     returns to your wallet.`;
   submitBtn.textContent = `Consume ${typeof prev.versionNo === "number" ? `v${prev.versionNo}` : "current"} → anchor ${nextNo ? `v${nextNo}` : "next version"}`;
+  submitBtn.classList.add("btn-version");
+  hint.hidden = false;
+  hint.textContent =
+    "This will replace your current live version with a new one; the old cell is consumed.";
 }
 
 function enterVersionMode({ txHash, index, genesis, title, sourceUrl, versionNo, ownerAddress }) {
@@ -874,6 +594,7 @@ function enterVersionMode({ txHash, index, genesis, title, sourceUrl, versionNo,
   };
   document.getElementById("projTitle").value = title;
   document.getElementById("projUrl").value = sourceUrl || "";
+  hideAnchorSuccess();
   updateCreatePanelMode();
   document.getElementById("create").scrollIntoView({ behavior: "smooth" });
   setStatus(
@@ -907,11 +628,11 @@ async function withdrawProof(outPoint) {
   await tx.completeFeeBy(state.signer, 1000);
   const txHash = await state.signer.sendTransaction(tx);
 
-  const list = loadRegistry();
+  const list = loadRegistry(state.network);
   const old = list.find((r) => r.txHash === outPoint.txHash);
   if (old) {
     old.active = false;
-    saveRegistry(list);
+    saveRegistry(state.network, list);
   }
   return { txHash };
 }
@@ -959,193 +680,12 @@ function wireWithdrawButton(panel, { txHash, index, title, ownerAddress }) {
       box.hidden = true;
       btn.disabled = true;
       btn.textContent = "Withdrawn";
+      refreshMyProjects();
     } catch (e) {
       setStatus("detailStatus", e.message || String(e), true);
       confirmBtn.disabled = input.value !== title;
     }
   };
-}
-
-/** Rendered from GET /projects/{unid}: full version chain, live/consumed from the index. */
-async function renderDetailFromApi(detail, rec) {
-  const panel = document.getElementById("detailPanel");
-  const live = detail.live_version;
-
-  let manifest = null;
-  if (live) {
-    try {
-      manifest = (await apiGetVersion(live.tx_hash))?.manifest ?? null;
-    } catch {
-      /* best-effort — the timeline below doesn't depend on this */
-    }
-  }
-  const files = manifest?.files || rec.files || [];
-
-  panel.innerHTML = `
-    <h3></h3>
-    <div class="fp-strip"></div>
-    <dl class="kv">
-      <dt>Status</dt><dd>${
-        detail.active
-          ? '<span class="badge live">LIVE — current version</span>'
-          : '<span class="badge dead">withdrawn — no live version</span>'
-      }</dd>
-      <dt>Project ID (UNID)</dt><dd>${detail.unid}</dd>
-      <dt>Overall SHA-256</dt><dd>${live?.project_sha256 ?? "—"}</dd>
-      <dt>Merkle root</dt><dd>${live?.merkle_root ?? "—"}</dd>
-      <dt>Created</dt><dd>${new Date(detail.created_at).toISOString()}</dd>
-      <dt>Owner (lock)</dt><dd>${detail.ckb_address}</dd>
-      <dt>Source URL</dt><dd>${
-        detail.source_url
-          ? `<a href="${detail.source_url}" target="_blank" rel="noopener">${detail.source_url}</a>`
-          : "—"
-      }</dd>
-    </dl>
-    <p><strong>Version chain</strong> — consumed ⊗ / live ●:</p>
-    ${renderCellDiagram(
-      detail.versions.map((v) => ({
-        status:
-          v.tx_hash === detail.live_tx_hash
-            ? "live"
-            : v.status === "pending"
-              ? "pending"
-              : "consumed",
-        label: `v${v.version_no ?? "?"} · ${v.status} · ${v.tx_hash}`,
-      })),
-    )}
-    <ol class="version-timeline">
-      ${detail.versions
-        .map(
-          (v) => `
-        <li class="${v.tx_hash === detail.live_tx_hash ? "is-live" : ""}">
-          <span class="vt-no">v${v.version_no ?? "?"}</span>
-          <span class="badge ${v.status === "consumed" ? "dead" : v.status === "pending" ? "pending" : "live"}">${v.status}</span>
-          <a class="vt-tx" href="${explorerTxUrl(v.tx_hash)}" target="_blank" rel="noopener">${v.tx_hash.slice(0, 18)}…</a>
-          <span class="vt-time">${v.block_time ? new Date(v.block_time).toLocaleString() : "pending"}</span>
-        </li>`,
-        )
-        .join("")}
-    </ol>
-    ${
-      files.length
-        ? `<p><strong>${files.length}</strong> fingerprinted entries:</p>
-      <ul class="file-list">${files
-        .map(
-          (f) =>
-            `<li><span class="fpath">${escapeHtml(f.p)}</span><span class="fhash">${f.h}</span><span></span></li>`,
-        )
-        .join("")}</ul>`
-        : `<p class="gate-note">Compact proof — individual file hashes are represented by the Merkle root.</p>`
-    }
-    <div class="submit-row">
-      ${detail.active ? '<button class="btn btn-ghost btn-small" id="newVersionBtn">Publish new version (consume this cell)</button>' : ""}
-      ${detail.active ? withdrawSectionHtml() : ""}
-      <span id="detailStatus" class="status"></span>
-      <span class="gate-note">Source: global index${API_BASE ? ` (${API_BASE})` : ""}</span>
-    </div>`;
-  panel.querySelector("h3").textContent = detail.title;
-  fpStrip(live?.project_sha256, panel.querySelector(".fp-strip"));
-
-  if (detail.active && detail.live_tx_hash) {
-    wireNewVersionButton(panel, {
-      txHash: detail.live_tx_hash,
-      index: detail.live_index ?? 0,
-      genesis: detail.unid,
-      title: detail.title,
-      sourceUrl: detail.source_url,
-      versionNo: live?.version_no,
-      ownerAddress: detail.ckb_address,
-    });
-    wireWithdrawButton(panel, {
-      txHash: detail.live_tx_hash,
-      index: detail.live_index ?? 0,
-      title: detail.title,
-      ownerAddress: detail.ckb_address,
-    });
-  }
-}
-
-/** Fallback when the global index is unreachable or doesn't (yet) have this project:
- *  the single version the caller clicked into, read straight from the chain. */
-async function renderDetailFromChain(rec) {
-  const panel = document.getElementById("detailPanel");
-  const chain = await fetchProofFromChain(rec.txHash, rec.index);
-  const m = chain.manifest || rec;
-  const files = m.files || rec.files || [];
-
-  panel.innerHTML = `
-    <h3></h3>
-    <div class="fp-strip"></div>
-    <dl class="kv">
-      <dt>Status</dt><dd>${
-        chain.live === true
-          ? '<span class="badge live">LIVE — current version</span>'
-          : chain.live === false
-            ? '<span class="badge dead">consumed — superseded or withdrawn</span>'
-            : "unknown"
-      }</dd>
-      <dt>Project ID (UNID)</dt><dd>${rec.unid}</dd>
-      <dt>Overall SHA-256</dt><dd>${m.project_sha256 || rec.project_sha256}</dd>
-      <dt>Merkle root</dt><dd>${m.merkle_root || rec.merkle_root || "—"}</dd>
-      <dt>Created (manifest)</dt><dd>${m.created || rec.created}</dd>
-      <dt>Block timestamp</dt><dd>${chain.blockTime ? chain.blockTime.toISOString() + " (authoritative)" : "pending / unavailable"}</dd>
-      <dt>Owner (lock)</dt><dd>${chain.lockOwner || rec.address || "—"}</dd>
-      <dt>Source URL</dt><dd>${m.source ? `<a href="${m.source}" target="_blank" rel="noopener">${m.source}</a>` : "—"}</dd>
-      <dt>Transaction</dt><dd><a href="${explorerTxUrl(rec.txHash)}" target="_blank" rel="noopener">${rec.txHash}</a></dd>
-    </dl>
-    <p><strong>Version chain</strong> — consumed ⊗ / live ●:</p>
-    ${renderCellDiagram([
-      {
-        status: chain.live === true ? "live" : chain.live === false ? "consumed" : "pending",
-        label: `${rec.txHash} · ${chain.live === true ? "live" : chain.live === false ? "consumed" : "unknown"}`,
-      },
-    ])}
-    ${
-      files.length
-        ? `<p><strong>${files.length}</strong> fingerprinted entries:</p>
-      <ul class="file-list">${files
-        .map(
-          (f) =>
-            `<li><span class="fpath">${escapeHtml(f.p)}</span><span class="fhash">${f.h}</span><span></span></li>`,
-        )
-        .join("")}</ul>`
-        : `<p class="gate-note">Compact proof — individual file hashes are represented by the Merkle root.</p>`
-    }
-    <div class="submit-row">
-      ${chain.live !== false ? '<button class="btn btn-ghost btn-small" id="newVersionBtn">Publish new version (consume this cell)</button>' : ""}
-      ${chain.live !== false ? withdrawSectionHtml() : ""}
-      <span id="detailStatus" class="status"></span>
-      <span class="gate-note">${API_BASE ? "Global index unavailable — direct chain lookup." : "Not connected to a global index — direct chain lookup."}</span>
-    </div>`;
-  panel.querySelector("h3").textContent = m.title || rec.title;
-  fpStrip(m.project_sha256 || rec.project_sha256, panel.querySelector(".fp-strip"));
-
-  const ownerAddress = chain.lockOwner || rec.address || null;
-  wireNewVersionButton(panel, {
-    txHash: rec.txHash,
-    index: rec.index,
-    genesis: rec.unid,
-    title: rec.title,
-    sourceUrl: rec.source,
-    ownerAddress,
-  });
-  wireWithdrawButton(panel, {
-    txHash: rec.txHash,
-    index: rec.index,
-    title: rec.title,
-    ownerAddress,
-  });
-}
-
-/** Small visual chain: ● live, ⊗ consumed, ○ pending — a compact companion to the tx-linked timeline. */
-function renderCellDiagram(nodes) {
-  const glyph = { live: "●", consumed: "⊗", pending: "○" };
-  return `<div class="cell-diagram">${nodes
-    .map(
-      (n, i) =>
-        `${i > 0 ? '<span class="cell-link">→</span>' : ""}<span class="cell-node ${n.status}" title="${escapeHtml(n.label)}">${glyph[n.status]}</span>`,
-    )
-    .join("")}</div>`;
 }
 
 /** Markup for the withdraw button + its retype-to-confirm panel — shared by both detail renderers. */
@@ -1171,13 +711,6 @@ function withdrawSectionHtml() {
     </div>`;
 }
 
-function escapeHtml(s) {
-  return String(s).replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
-  );
-}
-
 /* ================================================================== */
 /* Verify a dropped file                                              */
 /* ================================================================== */
@@ -1186,6 +719,31 @@ async function verifyFile(file) {
   document.getElementById("searchInput").value = h;
   await runSearch(h, { matchedHash: h });
   document.getElementById("verify").scrollIntoView({ behavior: "smooth" });
+}
+
+/** Persistent post-anchor confirmation (phase 2a) — stays up until the user starts a new
+ *  action (new upload, reset, or entering version mode), not tied to submitStatus's transient text.
+ *  `cert` (phase 4) carries everything the certificate/manifest downloads need for *this* anchor —
+ *  captured here rather than re-read from the form later, since the title/URL inputs may already
+ *  have moved on to the next project by the time the user clicks "Download certificate". */
+function showAnchorSuccess(txHash, cert) {
+  const box = document.getElementById("anchorSuccess");
+  const hashEl = document.getElementById("anchorSuccessHash");
+  const link = document.getElementById("anchorSuccessLink");
+  hashEl.textContent = `${txHash.slice(0, 18)}…`;
+  hashEl.title = txHash;
+  link.href = explorerTxUrl(state.network, txHash);
+  box.dataset.txHash = txHash;
+  state.lastAnchorCert = cert;
+  document.getElementById("anchorSuccessCertStatus").textContent = "";
+  box.hidden = false;
+}
+
+function hideAnchorSuccess() {
+  const box = document.getElementById("anchorSuccess");
+  box.hidden = true;
+  delete box.dataset.txHash;
+  state.lastAnchorCert = null;
 }
 
 /** Actually build, sign and send the anchor tx — called directly for a first anchor,
@@ -1197,7 +755,7 @@ async function doAnchor() {
     const compact = document.querySelector('input[name="storemode"]:checked').value === "root";
     setStatus("submitStatus", "Building transaction — confirm in your wallet…");
     const prev = state.pendingPrev;
-    const { txHash } = await anchorProof({
+    const { txHash, manifest } = await anchorProof({
       compact,
       prevOutPoint: prev?.outPoint || null,
       genesis: prev?.genesis,
@@ -1205,7 +763,7 @@ async function doAnchor() {
     });
     if (prev) {
       // mark the superseded record inactive and link versions in the registry
-      const list = loadRegistry();
+      const list = loadRegistry(state.network);
       const old = list.find((r) => r.txHash === prev.rec.txHash);
       if (old) old.active = false;
       const neu = list.find((r) => r.txHash === txHash);
@@ -1213,10 +771,23 @@ async function doAnchor() {
         neu.unid = prev.genesis;
         neu.prev = prev.rec.txHash;
       }
-      saveRegistry(list);
+      saveRegistry(state.network, list);
       exitVersionMode();
     }
-    setStatus("submitStatus", `Anchored ✔ tx ${txHash.slice(0, 18)}… — view it in Search below.`);
+    setStatus("submitStatus", "Anchored ✔ — see the confirmation below, or find it in Search.");
+    showAnchorSuccess(txHash, {
+      client: state.client,
+      network: state.network,
+      unid: prev ? prev.genesis : txHash,
+      txHash,
+      index: 0,
+      versionNo: prev ? (typeof prev.versionNo === "number" ? prev.versionNo + 1 : null) : 1,
+      active: true,
+      title: manifest.title,
+      sourceUrl: manifest.source || null,
+      knownManifest: manifest,
+    });
+    refreshMyProjects();
     state.entries = [];
     renderManifest();
   } catch (e) {
@@ -1227,31 +798,52 @@ async function doAnchor() {
 }
 
 /* ================================================================== */
-/* Wire up the UI                                                     */
+/* Full reset ("Start over", phase 2c) — unlike clearBtn (manifest      */
+/* only), this also resets search, src-tabs and the anchor confirmation, */
+/* without touching the connected wallet, network or theme.            */
 /* ================================================================== */
-function wireDropzone(el, onFiles) {
-  el.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    el.classList.add("is-over");
-  });
-  el.addEventListener("dragleave", () => el.classList.remove("is-over"));
-  el.addEventListener("drop", (e) => {
-    e.preventDefault();
-    el.classList.remove("is-over");
-    if (e.dataTransfer.files.length) onFiles(e.dataTransfer.files);
-  });
-  el.addEventListener("click", () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.onchange = () => input.files.length && onFiles(input.files);
-    input.click();
-  });
+/** True when there's in-progress proof data a reset would discard. */
+function hasUnsavedProofData() {
+  return (
+    state.entries.length > 0 ||
+    !!state.pendingPrev ||
+    document.getElementById("projTitle").value.trim() !== "" ||
+    document.getElementById("projUrl").value.trim() !== "" ||
+    document.getElementById("hashPaste").value.trim() !== ""
+  );
 }
 
+function performReset() {
+  state.entries = [];
+  exitVersionMode();
+  document.getElementById("projTitle").value = "";
+  document.getElementById("projUrl").value = "";
+  document.getElementById("hashPaste").value = "";
+  document.getElementById("ghRepo").value = "";
+  document.getElementById("urlInput").value = "";
+  document.getElementById("filesInput").value = "";
+  document.getElementById("folderInput").value = "";
+  document.getElementById("searchInput").value = "";
+  document.getElementById("searchResults").innerHTML = "";
+  document.getElementById("anchorConfirm").hidden = true;
+  hideAnchorSuccess();
+  setStatus("submitStatus", "");
+
+  document.querySelectorAll(".src-tab").forEach((t) => t.classList.remove("is-active"));
+  document.querySelectorAll(".src-pane").forEach((p) => p.classList.remove("is-active"));
+  document.querySelector('.src-tab[data-src="files"]').classList.add("is-active");
+  document.querySelector('.src-pane[data-pane="files"]').classList.add("is-active");
+
+  renderManifest();
+}
+
+/* ================================================================== */
+/* Wire up the UI                                                     */
+/* ================================================================== */
 function init() {
-  renderNetworkBadge();
-  renderApiSection();
-  wireNetworkSwitch();
+  renderNetworkBadge(state.network);
+  wireApiNavLink();
+  wireNetworkSwitch(() => state.network, switchNetwork);
   updateCreatePanelMode();
   document.getElementById("connectBtn").onclick = connectWallet;
 
@@ -1297,6 +889,7 @@ function init() {
     state.entries = [];
     exitVersionMode();
     document.getElementById("anchorConfirm").hidden = true;
+    hideAnchorSuccess();
     renderManifest();
     setStatus("submitStatus", "");
   };
@@ -1305,6 +898,77 @@ function init() {
     exitVersionMode();
     document.getElementById("anchorConfirm").hidden = true;
     setStatus("submitStatus", "");
+  };
+
+  // "Start over" (phase 2c) — confirm first if there's unsaved proof data,
+  // via the same inline-confirm pattern as anchorConfirm/netConfirm.
+  document.getElementById("resetBtn").onclick = () => {
+    if (hasUnsavedProofData()) {
+      document.getElementById("resetConfirm").hidden = false;
+    } else {
+      performReset();
+    }
+  };
+  document.getElementById("resetConfirmYes").onclick = () => {
+    document.getElementById("resetConfirm").hidden = true;
+    performReset();
+  };
+  document.getElementById("resetConfirmNo").onclick = () => {
+    document.getElementById("resetConfirm").hidden = true;
+  };
+
+  // copy the anchored tx hash from the persistent confirmation panel (phase 2a)
+  document.getElementById("anchorSuccessCopy").onclick = async () => {
+    const box = document.getElementById("anchorSuccess");
+    const txHash = box.dataset.txHash;
+    if (!txHash) return;
+    const btn = document.getElementById("anchorSuccessCopy");
+    try {
+      await navigator.clipboard.writeText(txHash);
+      const original = btn.textContent;
+      btn.textContent = "Copied ✔";
+      setTimeout(() => (btn.textContent = original), 1500);
+    } catch {
+      /* clipboard API unavailable — the full hash is still in the element's title */
+    }
+  };
+
+  // certificate + manifest downloads for the anchor just confirmed (phase 4)
+  document.getElementById("anchorSuccessCert").onclick = async () => {
+    if (!state.lastAnchorCert) return;
+    try {
+      await downloadCertificate({
+        ...state.lastAnchorCert,
+        btn: document.getElementById("anchorSuccessCert"),
+      });
+      setStatus("anchorSuccessCertStatus", "Certificate downloaded ✔");
+    } catch (e) {
+      setStatus("anchorSuccessCertStatus", e.message || String(e), true);
+    }
+  };
+  document.getElementById("anchorSuccessCertPdf").onclick = async () => {
+    if (!state.lastAnchorCert) return;
+    try {
+      await downloadCertificatePdf({
+        ...state.lastAnchorCert,
+        btn: document.getElementById("anchorSuccessCertPdf"),
+      });
+      setStatus("anchorSuccessCertStatus", "Certificate (PDF) downloaded ✔");
+    } catch (e) {
+      setStatus("anchorSuccessCertStatus", e.message || String(e), true);
+    }
+  };
+  document.getElementById("anchorSuccessManifest").onclick = async () => {
+    if (!state.lastAnchorCert) return;
+    try {
+      await downloadManifestJson({
+        ...state.lastAnchorCert,
+        btn: document.getElementById("anchorSuccessManifest"),
+      });
+      setStatus("anchorSuccessCertStatus", "Manifest downloaded ✔");
+    } catch (e) {
+      setStatus("anchorSuccessCertStatus", e.message || String(e), true);
+    }
   };
 
   // anchor — a plain first anchor with no service fee due goes straight to

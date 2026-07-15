@@ -1,5 +1,6 @@
 /* VeriCell — design tokens */
 :root {
+  color-scheme: light;
   --paper: #f7f9f7;
   --panel: #ffffff;
   --ink: #10201a;
@@ -10,10 +11,47 @@
   --accent-soft: #e2f5ee;
   --dark: #0c1613;
   --danger: #c04a3a;
+  --danger-soft: #f3e3e0;
+  --amber-soft: #fff1c2;
+  --amber-ink: #6b4c00;
+  --amber-line: #e8c65a;
+  --neutral-soft: #eef1ef;
+  --shadow-rgb: 16, 32, 26;
+  --paper-rgb: 247, 249, 247;
   --radius: 8px;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
   --display: "Space Grotesk", sans-serif;
   --body: "Inter", system-ui, sans-serif;
+
+  /* Paired with the always-dark --dark surface (.howto, .src-tab.is-active,
+     .badge.match) — that surface stays dark in both themes, so its text
+     tokens don't need a [data-theme="dark"] override. */
+  --dark-ink: #e8f1ec;
+  --dark-muted: #9db4aa;
+  --dark-mint: #7dffd4;
+  --on-dark: #fff;
+}
+
+/* Dark palette — same structure as :root, built from the --dark territory. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0e1815;
+  --panel: #16241f;
+  --ink: #e9f2ed;
+  --muted: #92aca1;
+  --line: #26382f;
+  --accent: #14c797;
+  --accent-ink: #7fe9c4;
+  --accent-soft: #163a30;
+  --dark: #060b09;
+  --danger: #ff7a63;
+  --danger-soft: #3d2018;
+  --amber-soft: #3a2c0e;
+  --amber-ink: #ffcf66;
+  --amber-line: #7a5a1f;
+  --neutral-soft: #1c2b26;
+  --shadow-rgb: 0, 0, 0;
+  --paper-rgb: 14, 24, 21;
 }
 * {
   box-sizing: border-box;
@@ -66,7 +104,7 @@ button {
   align-items: center;
   gap: 1.5rem;
   padding: 0.7rem clamp(1rem, 4vw, 3rem);
-  background: rgba(247, 249, 247, 0.92);
+  background: rgba(var(--paper-rgb), 0.92);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--line);
 }
@@ -126,7 +164,7 @@ button {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.8rem;
-  box-shadow: 0 8px 24px rgba(16, 32, 26, 0.14);
+  box-shadow: 0 8px 24px rgba(var(--shadow-rgb), 0.14);
 }
 .net-confirm p {
   margin: 0 0 0.7rem;
@@ -141,9 +179,9 @@ button {
 /* Prominent — a build pointed at a test chain should be unmistakable. */
 .net-badge--testnet,
 .net-badge--devnet {
-  background: #fff1c2;
-  color: #6b4c00;
-  border: 1px solid #e8c65a;
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+  border: 1px solid var(--amber-line);
 }
 /* Subtle — mainnet is the expected default for a production deployment. */
 .net-badge--mainnet {
@@ -172,9 +210,47 @@ button {
 .connect-btn.is-connected {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-dark);
   font-family: var(--mono);
   font-size: 0.82rem;
+}
+
+/* ---------- theme toggle ---------- */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 1.5px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+}
+.theme-toggle:hover {
+  border-color: var(--ink);
+}
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+.theme-toggle .icon-moon {
+  display: none;
+}
+:root[data-theme="dark"] .theme-toggle .icon-sun {
+  display: none;
+}
+:root[data-theme="dark"] .theme-toggle .icon-moon {
+  display: block;
+}
+/* Legal pages have a brand-only topbar with no .topnav to push against. */
+.topbar > .theme-toggle {
+  margin-left: auto;
 }
 
 /* ---------- hero ---------- */
@@ -189,7 +265,7 @@ button {
 }
 .eyebrow {
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--accent-ink);
@@ -252,7 +328,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 1.4rem;
-  box-shadow: 0 1px 2px rgba(16, 32, 26, 0.04);
+  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.04);
 }
 .panel-label {
   font-family: var(--mono);
@@ -418,7 +494,7 @@ textarea:focus {
 .src-tab.is-active {
   background: var(--dark);
   border-color: var(--dark);
-  color: #fff;
+  color: var(--on-dark);
 }
 .src-pane {
   display: none;
@@ -531,13 +607,18 @@ textarea:focus {
   color: var(--accent-ink);
 }
 
+/* "Consume vX → anchor vY" reads differently from a brand-new anchor at a glance. */
+.btn-primary.btn-version {
+  background: var(--accent-ink);
+}
+
 /* Amber, matching the testnet badge — the visual language for "irreversible, pay attention". */
 .permanence-note {
   font-size: 0.78rem;
   line-height: 1.5;
-  color: #6b4c00;
-  background: #fff1c2;
-  border: 1px solid #e8c65a;
+  color: var(--amber-ink);
+  background: var(--amber-soft);
+  border: 1px solid var(--amber-line);
   border-radius: var(--radius);
   padding: 0.55rem 0.8rem;
   margin: 0.8rem 0;
@@ -591,17 +672,17 @@ textarea:focus {
 .cell-node.live {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-dark);
 }
 .cell-node.consumed {
-  background: #f3e3e0;
+  background: var(--danger-soft);
   border-color: var(--danger);
   color: var(--danger);
 }
 .cell-node.pending {
-  background: #fff1c2;
-  border-color: #e8c65a;
-  color: #6b4c00;
+  background: var(--amber-soft);
+  border-color: var(--amber-line);
+  color: var(--amber-ink);
 }
 .cell-link {
   color: var(--muted);
@@ -657,23 +738,23 @@ textarea:focus {
   color: var(--accent-ink);
 }
 .badge.dead {
-  background: #f3e3e0;
+  background: var(--danger-soft);
   color: var(--danger);
 }
 .badge.match {
   background: var(--dark);
-  color: #7dffd4;
+  color: var(--dark-mint);
 }
 .badge.pending {
-  background: #fff1c2;
-  color: #6b4c00;
+  background: var(--amber-soft);
+  color: var(--amber-ink);
 }
 .badge.provenance.idx {
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
 .badge.provenance.dev {
-  background: #eef1ef;
+  background: var(--neutral-soft);
   color: var(--muted);
 }
 
@@ -736,30 +817,92 @@ textarea:focus {
   color: var(--muted);
   font-family: var(--mono);
 }
+.vt-cert-actions {
+  font-size: 0.8rem;
+}
+.vt-cert-actions .link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: inherit;
+}
 
-/* ---------- API & automation ---------- */
-.code-block {
-  background: var(--dark);
-  color: #d7ffe9;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  line-height: 1.5;
-  padding: 0.9rem 1rem;
+/* ---------- use cases (collapsible grid) ---------- */
+.usecase-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.6rem;
+  align-items: start;
+}
+.usecase {
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  overflow-x: auto;
-  white-space: pre;
-  margin: 0.9rem 0;
+  background: var(--panel);
+}
+.usecase[open] {
+  grid-column: 1 / -1;
+}
+.usecase summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.usecase summary::-webkit-details-marker {
+  display: none;
+}
+.usecase summary::after {
+  content: "";
+  flex: none;
+  width: 0.45em;
+  height: 0.45em;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.usecase[open] summary::after {
+  transform: rotate(45deg);
+}
+.usecase[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+.usecase-body {
+  padding: 0.8rem 1rem 1rem;
+}
+.usecase-body > p:first-child {
+  margin-top: 0;
+  font-size: 0.92rem;
+}
+.usecase-sub {
+  margin-top: 0.9rem;
+}
+.usecase-sub ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+}
+.usecase-sub li {
+  margin-bottom: 0.2rem;
+}
+.usecase-body .hint {
+  margin-top: 0.9rem;
 }
 
 /* ---------- how it works ---------- */
 .howto {
   background: var(--dark);
-  color: #e8f1ec;
+  color: var(--dark-ink);
   margin-top: 4rem;
   padding: 3.5rem clamp(1rem, 4vw, 3rem);
 }
 .howto h2 {
-  color: #fff;
+  color: var(--on-dark);
   max-width: 900px;
   margin: 0 auto 0.5rem;
 }
@@ -771,12 +914,12 @@ textarea:focus {
   gap: 1rem;
 }
 .steps strong {
-  color: #7dffd4;
+  color: var(--dark-mint);
 }
 .howto .fine {
   max-width: 900px;
   margin: 0 auto;
-  color: #9db4aa;
+  color: var(--dark-muted);
   font-size: 0.85rem;
 }
 
@@ -827,13 +970,13 @@ textarea:focus {
   color: var(--muted);
 }
 .legal-page .fill-in {
-  background: #fff1c2;
-  border: 1px solid #e8c65a;
+  background: var(--amber-soft);
+  border: 1px solid var(--amber-line);
   border-radius: 4px;
   padding: 0.05em 0.4em;
   font-family: var(--mono);
   font-size: 0.85em;
-  color: #6b4c00;
+  color: var(--amber-ink);
 }
 .legal-page .back-link {
   display: inline-block;
@@ -850,6 +993,199 @@ textarea:focus {
   }
   .kv {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   Mobile responsiveness (phase 8)
+
+   One breakpoint (860px) for everything below, reusing the width the hero/
+   features/kv rules above already stack at: measuring the topbar's actual
+   content (brand + 4 nav links + net badge + theme toggle + connect button)
+   shows it doesn't fit a single unwrapped row much below ~860px on this
+   real page, so the nav collapse point follows the DOM rather than the
+   phase doc's approximate "~640px". Nothing here touches a selector outside
+   these media queries, so nothing above 860px — including the 1024px+
+   desktop layout — changes at all.
+   ========================================================================== */
+.nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 1.5px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 0;
+}
+.nav-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+.nav-toggle:hover {
+  border-color: var(--ink);
+}
+/* On desktop the wrapper must not affect layout — its <a> children stay
+   direct flex items of .topnav, exactly as before it existed. */
+.nav-links {
+  display: contents;
+}
+
+@media (max-width: 860px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  /* ---------- topbar / hamburger nav ---------- */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    padding: 0.6rem 1rem;
+  }
+  .nav-toggle {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+  }
+  .nav-links {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 21;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 8px 24px rgba(var(--shadow-rgb), 0.14);
+    padding: 0.4rem 1rem 0.8rem;
+  }
+  .nav-links.is-open {
+    display: flex;
+  }
+  .nav-links a {
+    padding: 0.85rem 0.2rem;
+    font-size: 1rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-links a:last-child {
+    border-bottom: 0;
+  }
+  .net-switch {
+    /* Bubble .net-confirm's containing block up to .topbar (still
+       positioned via position: sticky) so its popover can span the full
+       topbar width below instead of a fixed 240px hanging off net-switch's
+       own position, which can run off either edge at this width. */
+    position: static;
+  }
+  .net-confirm {
+    left: 1rem;
+    right: 1rem;
+    width: auto;
+  }
+  .net-confirm-actions {
+    flex-direction: column;
+  }
+  .net-confirm-actions .btn {
+    width: 100%;
+  }
+  .connect-btn {
+    margin-left: auto;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.85rem;
+  }
+
+  /* ---------- touch targets + iOS zoom prevention ---------- */
+  .theme-toggle,
+  .net-badge {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn-small {
+    min-height: 40px;
+  }
+  .link-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 0.15rem;
+  }
+  .src-tab {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.55rem 1rem;
+  }
+  .file-list .rm {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .usecase summary {
+    min-height: 44px;
+    padding: 0.9rem 1rem;
+  }
+  .storage-mode label {
+    padding: 0.35rem 0;
+  }
+  input[type="text"],
+  input[type="url"],
+  textarea {
+    /* >=16px stops iOS Safari zooming the page in on focus. */
+    font-size: 16px;
+    padding: 0.75rem 0.85rem;
+  }
+
+  /* ---------- hero ---------- */
+  .eyebrow {
+    font-size: 0.7rem;
+    letter-spacing: 0.07em;
+  }
+  .hero-actions {
+    flex-wrap: wrap;
+  }
+
+  /* ---------- source tabs / confirm panels stack ---------- */
+  #anchorSuccess .submit-row,
+  .inline-confirm .submit-row,
+  .withdraw-confirm .submit-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  #anchorSuccess .submit-row .btn,
+  .inline-confirm .submit-row .btn,
+  .withdraw-confirm .submit-row .btn {
+    width: 100%;
+  }
+
+  /* ---------- hashes / addresses / file lists ---------- */
+  .file-list li {
+    grid-template-columns: 1fr minmax(0, 42%) auto;
+    gap: 0.5rem;
+  }
+  .file-list .fpath,
+  .file-list .fhash {
+    overflow-wrap: anywhere;
+    word-break: break-all;
   }
 }
 @media (prefers-reduced-motion: reduce) {
