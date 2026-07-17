@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script src="/theme-init.js"></script>
-    <title>VeriCell — Prove your work on Nervos CKB</title>
+    <title>VeriCell.net — Prove your work on Nervos CKB</title>
     <meta
       name="description"
       content="Anchor the SHA-256 fingerprints of any project in a live CKB cell. Prove authorship, integrity and time — verifiable by anyone, forever."
@@ -112,9 +112,9 @@
           <p class="lede">
             AI makes it trivial to alter files, images and code. A SHA-256 hash proves a file is
             untampered — but not <em>when</em> it existed, <em>who</em> published it, or
-            <em>where</em> to find the current version. VeriCell stores your project's hash manifest
-            in a live cell on the Nervos CKB blockchain: immutable, timestamped, owned by your
-            wallet, and updatable version by version.
+            <em>where</em> to find the current version. VeriCell.net stores your project's hash
+            manifest in a live cell on the Nervos CKB blockchain: immutable, timestamped, owned by
+            your wallet, and updatable version by version.
           </p>
           <div class="hero-actions">
             <a class="btn btn-primary" href="#create">Create a proof</a>
@@ -130,7 +130,9 @@
           <div id="heroHashOut" class="hash-out" hidden>
             <div class="fp-strip" data-fp></div>
             <code class="hash-code" data-hash></code>
-            <button class="btn btn-small" id="heroSearchBtn">Search this hash on VeriCell</button>
+            <button class="btn btn-small" id="heroSearchBtn">
+              Search this hash on VeriCell.net
+            </button>
           </div>
         </div>
       </section>
@@ -357,7 +359,7 @@
             file is hashed with SHA-256 locally in your browser — content never leaves your machine.
           </li>
           <li>
-            <strong>Anchor it.</strong> VeriCell builds a manifest (title, paths, hashes, source
+            <strong>Anchor it.</strong> VeriCell.net builds a manifest (title, paths, hashes, source
             URL, overall hash) and writes it into the data of a new live cell locked to your wallet
             address. The block header fixes the timestamp; the lock script fixes the owner.
           </li>
@@ -377,7 +379,7 @@
       <!-- ============ USE CASES (phase 6) ============ -->
       <section id="use-cases" class="workmask">
         <div class="mask-head">
-          <h2>Use cases for VeriCell</h2>
+          <h2>Use cases for VeriCell.net</h2>
         </div>
         <div class="panel">
           <div class="usecase-grid">
@@ -409,8 +411,8 @@
                   </ul>
                 </div>
                 <p class="hint">
-                  Note: fits especially well since VeriCell already ships CLI, REST API, and GitHub
-                  Actions/CI-CD automation paths.
+                  Note: fits especially well since VeriCell.net already ships CLI, REST API, and
+                  GitHub Actions/CI-CD automation paths.
                 </p>
               </div>
             </details>
@@ -903,13 +905,18 @@
 
     <footer class="footer">
       <p>
-        VeriCell — proof of authorship, integrity and time on
+        VeriCell.net — proof of authorship, integrity and time on
         <a href="https://www.nervos.org" target="_blank" rel="noopener">Nervos CKB</a>. Built with
         <a href="https://github.com/ckb-devrel/ccc" target="_blank" rel="noopener">CCC</a>.
       </p>
       <p class="fine">Fingerprints only. Your files stay yours.</p>
       <nav class="community-links">
-        <a href="https://github.com/psawyerberlin/vericell" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a
+          href="https://github.com/psawyerberlin/vericellnet"
+          target="_blank"
+          rel="noopener noreferrer"
+          >GitHub</a
+        >
         <a href="https://t.me/VeriCellnet" target="_blank" rel="noopener noreferrer">Telegram</a>
       </nav>
       <nav class="legal-links">

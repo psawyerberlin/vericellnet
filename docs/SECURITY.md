@@ -118,7 +118,7 @@ case, using a local receiver that 302s to `127.0.0.1:1`.
 
 ## 6. Server-held signing keys (N/A)
 
-VeriCell v1.1.0 removed the server-signed anchoring path entirely — every anchor and withdraw is
+VeriCell.net v1.1.0 removed the server-signed anchoring path entirely — every anchor and withdraw is
 now non-custodial (prepare/sign/submit), so the API never holds a signing key at all and every
 proof cell's lock is the caller's own wallet. See `docs/DECISIONS.md`'s "custodial mode removal"
 entry for the rationale; this section's original findings no longer apply. **N/A.**

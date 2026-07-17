@@ -202,7 +202,7 @@ async function renderCertificateHtml(data) {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>VeriCell certificate — ${escapeHtml(data.title)}${
+<title>VeriCell.net certificate — ${escapeHtml(data.title)}${
     typeof data.versionNo === "number" ? ` v${data.versionNo}` : ""
   }</title>
 <style>
@@ -384,7 +384,7 @@ ${notice.banner}
   <div class="cert-content">
     <div class="cert-head">
       ${brandMarkSvg()}
-      <span class="brand-name">VeriCell</span>
+      <span class="brand-name">VeriCell.net</span>
     </div>
     <p class="tagline">Proof of Existence, Integrity, Ownership and Time</p>
 
@@ -540,7 +540,7 @@ async function renderCertificatePdf(data) {
 
   const doc = await PDFDocument.create();
   doc.setTitle(
-    `VeriCell certificate — ${data.title}${typeof data.versionNo === "number" ? ` v${data.versionNo}` : ""}`,
+    `VeriCell.net certificate — ${data.title}${typeof data.versionNo === "number" ? ` v${data.versionNo}` : ""}`,
   );
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -648,7 +648,7 @@ async function renderCertificatePdf(data) {
     y = PDF_PAGE_H - bannerH - 16;
   }
 
-  wrapped("VeriCell", { size: 18, f: bold, color: ink, lineGap: 4 });
+  wrapped("VeriCell.net", { size: 18, f: bold, color: ink, lineGap: 4 });
   wrapped("PROOF OF EXISTENCE, INTEGRITY, OWNERSHIP AND TIME", {
     size: 8,
     f: mono,

@@ -1,4 +1,4 @@
-# VeriCell — Technical Documentation
+# VeriCell.net — Technical Documentation
 
 Proof of authorship, integrity and time for any digital project, anchored in a live cell on Nervos CKB. Accessible through a web app **and** a REST API for automation (CI/CD, GitHub Actions, scripts).
 
@@ -12,7 +12,7 @@ A SHA-256 hash published next to a download proves file integrity — but only a
 - **Author** — who published it (a hash has no owner)
 - **Currency** — whether this is still the latest version, and where to find it
 
-VeriCell solves all three by storing a hash **manifest** in a CKB cell:
+VeriCell.net solves all three by storing a hash **manifest** in a CKB cell:
 
 | Property     | Provided by                                                        |
 |--------------|--------------------------------------------------------------------|
@@ -46,7 +46,7 @@ VeriCell solves all three by storing a hash **manifest** in a CKB cell:
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-The chain is the source of truth. The database is **derived state** — anyone can rebuild it from the chain, so users never have to trust the VeriCell server. The web app can operate without the API (direct RPC + local index); the API adds global search and automation.
+The chain is the source of truth. The database is **derived state** — anyone can rebuild it from the chain, so users never have to trust the VeriCell.net server. The web app can operate without the API (direct RPC + local index); the API adds global search and automation.
 
 Package note: the CCC repository is `github.com/ckb-devrel/ccc`; the npm package is **`@ckb-ccc/ccc`**.
 
@@ -150,7 +150,7 @@ CREATE TABLE sync_state (             -- indexer cursor, reorg-safe
 );
 ```
 
-The **indexer worker** follows the chain (CKB indexer RPC, filtered by the VeriCell type script once Type ID is deployed), parses manifests, maintains these tables, and handles reorgs by rolling back to the fork point using `sync_state`.
+The **indexer worker** follows the chain (CKB indexer RPC, filtered by the VeriCell.net type script once Type ID is deployed), parses manifests, maintains these tables, and handles reorgs by rolling back to the fork point using `sync_state`.
 
 ## 7. REST API (`/api/v1`)
 
@@ -183,7 +183,7 @@ The user's key never leaves their machine; the CLI wraps both calls around a loc
 
 ### 7.2-B Service fee
 
-VeriCell may charge a service fee on top of the locked capacity: **1% of the new proof cell's locked capacity, waived entirely below 300 CKB**, floored to the nearest shannon. The fee is per-network config only — `VERICELL_FEE_ADDRESS_TESTNET` / `VERICELL_FEE_ADDRESS_MAINNET` (server; `VITE_`-prefixed for the web build) — and is fully inert on any network where the corresponding variable is unset (no fee address is ever hardcoded in this repo).
+VeriCell.net may charge a service fee on top of the locked capacity: **1% of the new proof cell's locked capacity, waived entirely below 300 CKB**, floored to the nearest shannon. The fee is per-network config only — `VERICELL_FEE_ADDRESS_TESTNET` / `VERICELL_FEE_ADDRESS_MAINNET` (server; `VITE_`-prefixed for the web build) — and is fully inert on any network where the corresponding variable is unset (no fee address is ever hardcoded in this repo).
 
 The fee applies to **every transaction that creates a new proof cell**, regardless of origin — a first anchor or a new version, whether built by the web app, the CLI, or any other API-prepared transaction. `POST /proofs/prepare` always builds the fee leg into the returned transaction and reports it in the `cost` field; `POST /proofs/submit` independently recomputes the fee due from the signed transaction's own output capacity and rejects (`402 Payment Required`) a transaction that doesn't actually pay it, for both the first-anchor and new-version paths — a client cannot skip the fee by stripping the leg before signing. Withdrawals create no new proof cell and so carry no service fee at all — `/proofs/prepare`'s withdraw response has no `cost` field, and `/proofs/submit` never requires one for a withdraw transaction.
 

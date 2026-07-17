@@ -1,4 +1,4 @@
-# VeriCell — UX improvement pass (phased)
+# VeriCell.net — UX improvement pass (phased)
 
 Eight phases, meant to be run as **separate Claude Code sessions/commits**,
 in this order. Order is not arbitrary: phase 4 (proof certificate) depends
@@ -203,7 +203,7 @@ archive, print, or hand to a third party.
 
 **Certificate contents:**
 
-- VeriCell branding + the "Proof of Existence, Integrity, Ownership and
+- VeriCell.net branding + the "Proof of Existence, Integrity, Ownership and
   Time" line, network name (testnet/mainnet clearly marked — a testnet
   certificate must not be mistakable for a mainnet one).
 - Project title, version number, and source URL (if provided).
@@ -270,13 +270,13 @@ The API already supports this: `GET /projects?address=<addr>` (see
 
 ---
 
-## Phase 6 — "Use cases for VeriCell" section
+## Phase 6 — "Use cases for VeriCell.net" section
 
 New collapsible section, styled consistently with existing `.workmask`
 sections (e.g. `#how`), placed where the removed `#api` section used to sit
 (phase 1b) so the page keeps its rhythm.
 
-- Structure: heading "Use cases for VeriCell", then a list of items showing
+- Structure: heading "Use cases for VeriCell.net", then a list of items showing
   **only a title** each. Clicking a title expands the body below it — prefer
   native `<details>`/`<summary>` for built-in accessibility unless it
   visually clashes with the rest of the page, in which case match the
@@ -301,7 +301,7 @@ bundles.
 *Proof provided:* This exact release existed at block time T. The files
 were not modified after release. The current live cell shows the latest
 official version. Older versions remain verifiable as consumed cells.
-*(Note: fits especially well since VeriCell already ships CLI, REST API,
+*(Note: fits especially well since VeriCell.net already ships CLI, REST API,
 and GitHub Actions/CI-CD automation paths.)*
 
 **2. Website and web-app releases**

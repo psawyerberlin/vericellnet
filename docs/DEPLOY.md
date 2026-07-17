@@ -1,4 +1,4 @@
-# Deploying VeriCell
+# Deploying VeriCell.net
 
 A from-scratch runbook for taking a fresh VPS to a running `vericell.net` — the
 `docker-compose.yml` stack described in `ClaudeCodeInstruction.md` Phase 10 and
@@ -71,7 +71,7 @@ Edit `.env`:
 - Leave `VERICELL_RPC_URL` unset to use CKB's public endpoints (the
   production default) unless you're running your own node.
 - `INDEXER_START_BLOCK_TESTNET` / `INDEXER_START_BLOCK_MAINNET` — set these
-  to VeriCell's actual first-anchor block height on each network once you
+  to VeriCell.net's actual first-anchor block height on each network once you
   know it, so a fresh deploy doesn't walk the whole chain from genesis. `0`
   is fine for a first deploy.
 - Fee variables — leave every `VERICELL_FEE_ADDRESS_*`/`VITE_VERICELL_FEE_ADDRESS_*`

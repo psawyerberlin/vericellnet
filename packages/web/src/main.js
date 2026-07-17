@@ -99,7 +99,11 @@ async function connectWallet() {
   const btn = document.getElementById("connectBtn");
   try {
     btn.textContent = "Connecting…";
-    state.signer = new ccc.JoyId.CkbSigner(state.client, "VeriCell", location.origin + "/icon.svg");
+    state.signer = new ccc.JoyId.CkbSigner(
+      state.client,
+      "VeriCell.net",
+      location.origin + "/icon.svg",
+    );
     await state.signer.connect();
     state.address = await state.signer.getRecommendedAddress();
     btn.textContent = `${state.address.slice(0, 8)}…${state.address.slice(-6)}`;

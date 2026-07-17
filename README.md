@@ -1,11 +1,11 @@
-# VeriCell
+# VeriCell.net
 
 Proof of authorship, integrity and time for any digital project, anchored in
 a live cell on Nervos CKB — accessible through a web app and a REST API for
 automation (CI/CD, GitHub Actions, scripts).
 
 A SHA-256 hash published next to a download proves file integrity, but only
-as long as the page hosting it is trusted and unchanged. VeriCell anchors a
+as long as the page hosting it is trusted and unchanged. VeriCell.net anchors a
 hash manifest on-chain instead: the block timestamp proves *when*, the
 cell's lock script proves *who* (only the owner can consume/supersede it),
 and cell liveness proves *which version is current* — a consumed cell always
@@ -67,7 +67,7 @@ setup, backups, and disaster recovery.
 
 ## Service fee
 
-VeriCell anchors are free of any service fee below 300 CKB of locked
+VeriCell.net anchors are free of any service fee below 300 CKB of locked
 capacity. At or above that, a 1% service fee applies on top of the locked
 capacity. The locked capacity itself is never spent — it stays refundable to
 you later, by withdrawing the proof cell or superseding it with a new
