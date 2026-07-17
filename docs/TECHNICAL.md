@@ -2,6 +2,8 @@
 
 Proof of authorship, integrity and time for any digital project, anchored in a live cell on Nervos CKB. Accessible through a web app **and** a REST API for automation (CI/CD, GitHub Actions, scripts).
 
+**Naming:** VeriCell.net = **Veri**fication + **Cell** (Nervos CKB's Cell model) + **Net**work — reflecting the project's technical foundation on CKB's live-cell architecture.
+
 > Note on naming: the hash algorithm is **SHA-256** (256-bit output of the SHA-2 family). "SHA254" in early notes refers to the same thing.
 
 ## 1. Problem statement

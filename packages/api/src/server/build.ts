@@ -219,7 +219,7 @@ export function buildServer(opts: BuildServerOptions): TypedApp {
     openapi: {
       openapi: "3.1.0",
       info: {
-        title: "VeriCell API",
+        title: "VeriCell.net API",
         description:
           "Proof of authorship, integrity and time for any digital project, anchored on Nervos CKB. Public read-only endpoints — see TECHNICAL.md §7.1.",
         version: "1.1.0",
@@ -241,7 +241,7 @@ export function buildServer(opts: BuildServerOptions): TypedApp {
           description:
             mountedNetworks.length > 1
               ? `Alias for the default network (${defaultNetwork})`
-              : `VeriCell API (${defaultNetwork})`,
+              : `VeriCell.net API (${defaultNetwork})`,
         },
         ...(mountedNetworks.length > 1
           ? [
