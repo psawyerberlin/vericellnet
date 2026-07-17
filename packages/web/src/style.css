@@ -932,18 +932,21 @@ textarea:focus {
 .footer .fine {
   font-size: 0.78rem;
 }
-.legal-links {
+.legal-links,
+.community-links {
   display: flex;
   gap: 1rem;
   flex-wrap: wrap;
   margin-top: 0.8rem;
 }
-.legal-links a {
+.legal-links a,
+.community-links a {
   color: var(--muted);
   font-size: 0.8rem;
   text-decoration: none;
 }
-.legal-links a:hover {
+.legal-links a:hover,
+.community-links a:hover {
   color: var(--ink);
   text-decoration: underline;
 }
